@@ -1,0 +1,16 @@
+[project]
+name = "smoke-sense"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12.0"
+dependencies = [
+    "typer>=0.26.7",
+]
+
+[tool.uv]
+package = true
+
+[project.scripts]
+smoke-sense = "smoke_sense.bin:app"
+
