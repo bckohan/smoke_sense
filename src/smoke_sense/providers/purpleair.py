@@ -129,7 +129,10 @@ class PurpleAirProvider(AQIProvider):
 
         bbox = bbox_for_county(county_fips)
         sensors = self._list_sensors(bbox)
-        fields = ["time_stamp", "humidity"] + [
+        # PurpleAir returns `time_stamp` automatically as the first history
+        # column and rejects it as a requested field (HTTP 400), so we must not
+        # ask for it explicitly.
+        fields = ["humidity"] + [
             f for f, (p, _) in _FIELD_MAP.items() if p in wanted
         ]
         frames = []
