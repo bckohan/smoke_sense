@@ -10,9 +10,10 @@ from smoke_sense.providers.purpleair import PurpleAirProvider, epa_correct_pm25
 
 
 class _FakeResp:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload, status_code=200, headers=None):
         self._payload = payload
         self.status_code = status_code
+        self.headers = headers or {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -32,8 +33,9 @@ class _FakeSession:
         self.calls.append({"url": url, "params": params})
         if url.endswith("/v1/sensors"):
             return _FakeResp(
-                {"fields": ["sensor_index", "latitude", "longitude"],
-                 "data": [[262253, 33.75, -118.33]]}
+                {"fields": ["sensor_index", "latitude", "longitude",
+                            "last_seen", "date_created"],
+                 "data": [[262253, 33.75, -118.33, 1782000000, 1600000000]]}
             )
         # A single inclusive day spans 86400s; this simulated server accepts one
         # day and rejects larger ranges, forcing the chunker down to day chunks.
@@ -44,6 +46,17 @@ class _FakeSession:
             {"fields": ["time_stamp", "humidity", "pm2.5_cf_1", "pm10.0_cf_1"],
              "data": [[1781996400, 44, 1.8, 3.2]]}
         )
+
+
+_WORLD = {"type": "Polygon",
+          "coordinates": [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]]}
+
+
+@pytest.fixture(autouse=True)
+def _stub_polygon(monkeypatch):
+    monkeypatch.setattr(
+        "smoke_sense.providers.purpleair.county_polygon", lambda fips: _WORLD
+    )
 
 
 def test_epa_correction_hand_computed():
@@ -115,3 +128,95 @@ def test_fetch_chunks_large_range_on_400():
     assert len(history_calls) > 1
     assert not df.empty
     assert (df["agg_window"] == 10).all()
+
+
+def test_get_retries_on_429_with_retry_after(monkeypatch):
+    slept = []
+    monkeypatch.setattr("smoke_sense.providers.purpleair.time.sleep", slept.append)
+    responses = [
+        _FakeResp({}, status_code=429, headers={"Retry-After": "7"}),
+        _FakeResp({"ok": True}),
+    ]
+
+    class S:
+        def get(self, url, headers=None, params=None, timeout=None):
+            return responses.pop(0)
+
+    provider = PurpleAirProvider(purpleair_key="k", session=S())
+    assert provider._get("https://x", {}) == {"ok": True}
+    assert slept == [7.0]
+
+
+def test_get_backoff_without_retry_after(monkeypatch):
+    slept = []
+    monkeypatch.setattr("smoke_sense.providers.purpleair.time.sleep", slept.append)
+    responses = [
+        _FakeResp({}, status_code=429),
+        _FakeResp({}, status_code=429),
+        _FakeResp({"ok": True}),
+    ]
+
+    class S:
+        def get(self, url, headers=None, params=None, timeout=None):
+            return responses.pop(0)
+
+    provider = PurpleAirProvider(purpleair_key="k", session=S())
+    assert provider._get("https://x", {}) == {"ok": True}
+    assert slept == [2.0, 4.0]
+
+
+def test_get_raises_after_max_retries(monkeypatch):
+    monkeypatch.setattr("smoke_sense.providers.purpleair.time.sleep", lambda *_: None)
+
+    class S:
+        def get(self, url, headers=None, params=None, timeout=None):
+            return _FakeResp({}, status_code=429)
+
+    provider = PurpleAirProvider(purpleair_key="k", session=S())
+    with pytest.raises(requests.HTTPError):
+        provider._get("https://x", {})
+
+
+def test_list_sensors_requests_outdoor_and_activity_fields():
+    session = _FakeSession()
+    provider = PurpleAirProvider(purpleair_key="k", session=session)
+    from smoke_sense.geo import BBox
+    provider._list_sensors(BBox(33.0, -119.0, 35.0, -117.0))
+    params = session.calls[0]["params"]
+    assert params["location_type"] == 0
+    assert "last_seen" in params["fields"]
+    assert "date_created" in params["fields"]
+
+
+def test_fetch_excludes_out_of_polygon_sensor(monkeypatch):
+    # A polygon that does NOT contain the canned sensor at (lat 33.75, lon -118.33).
+    # Guards against a lon/lat argument swap that the world-polygon stub would hide.
+    tiny = {"type": "Polygon",
+            "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    monkeypatch.setattr(
+        "smoke_sense.providers.purpleair.county_polygon", lambda fips: tiny
+    )
+    session = _FakeSession()
+    provider = PurpleAirProvider(purpleair_key="k", session=session)
+    df = provider.fetch(
+        "06037", date(2026, 6, 16), date(2026, 6, 17), [Pollutant.PM2_5], cadence=10
+    )
+    history_calls = [c for c in session.calls if "/history" in c["url"]]
+    assert history_calls == []
+    assert df.empty
+
+
+def test_filter_sensors_drops_out_of_window_and_out_of_polygon():
+    geom = {"type": "Polygon",
+            "coordinates": [[[-119, 33], [-117, 33], [-117, 35], [-119, 35], [-119, 33]]]}
+    in_county = {"sensor_index": 1, "latitude": 34.0, "longitude": -118.0,
+                 "last_seen": 1782000000, "date_created": 1600000000}
+    offline_before = {"sensor_index": 2, "latitude": 34.0, "longitude": -118.0,
+                      "last_seen": 1600000000, "date_created": 1500000000}
+    out_of_county = {"sensor_index": 3, "latitude": 0.0, "longitude": 0.0,
+                     "last_seen": 1782000000, "date_created": 1600000000}
+    kept = PurpleAirProvider._filter_sensors(
+        [in_county, offline_before, out_of_county], geom,
+        date(2026, 6, 1), date(2026, 6, 30),
+    )
+    assert [s["sensor_index"] for s in kept] == [1]

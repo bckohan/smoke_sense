@@ -1,0 +1,25 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-24-purpleair-sensor-fanout.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: County polygons in geo.py",
+      "status": "completed",
+      "description": "**Goal:** Bundle county polygons + pure-Python point-in-polygon.\n\n**Files:** geo.py, scripts/build_county_polygons.py, _data/county_polygons.parquet, tests/test_geo.py, pyproject.toml\n\n**Verify:** `uv run pytest tests/test_geo.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/geo.py\", \"scripts/build_county_polygons.py\", \"src/smoke_sense/_data/county_polygons.parquet\", \"tests/test_geo.py\", \"pyproject.toml\"], \"verifyCommand\": \"uv run pytest tests/test_geo.py -v\", \"acceptanceCriteria\": [\"point_in_polygon Polygon/MultiPolygon/holes/bbox-but-outside\", \"county_polygon + KeyError\", \"parquet built and loadable\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: PurpleAir 429 backoff (_get)",
+      "status": "completed",
+      "description": "**Goal:** Route PurpleAir GETs through a `_get` helper with 429 backoff.\n\n**Files:** providers/purpleair.py, tests/test_providers_purpleair.py\n\n**Verify:** `uv run pytest tests/test_providers_purpleair.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/purpleair.py\", \"tests/test_providers_purpleair.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_purpleair.py -v\", \"acceptanceCriteria\": [\"_get retries on 429, raises after max\", \"_list_sensors/_get_history via _get; 400 reaches chunker\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: PurpleAir sensor filtering",
+      "status": "completed",
+      "blockedBy": [0, 1],
+      "description": "**Goal:** Filter sensors (outdoor + activity overlap + polygon) before history calls.\n\n**Files:** providers/purpleair.py, tests/test_providers_purpleair.py\n\n**Verify:** `uv run pytest tests/test_providers_purpleair.py -v` then `uv run pytest -q`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/purpleair.py\", \"tests/test_providers_purpleair.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_purpleair.py -v\", \"acceptanceCriteria\": [\"_list_sensors location_type=0 + last_seen/date_created\", \"_filter_sensors overlap+in-polygon only\", \"fetch filters; empty->empty_frame\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-24"
+}

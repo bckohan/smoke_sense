@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import warnings
 from datetime import date, datetime, timedelta, timezone
 
@@ -10,7 +11,7 @@ import requests
 
 from ..aqi import compute_aqi
 from ..data import Pollutant, empty_frame
-from ..geo import bbox_for_county
+from ..geo import bbox_for_county, county_polygon, point_in_polygon
 from .base import AQIProvider, register
 
 _SENSORS_URL = "https://api.purpleair.com/v1/sensors"
@@ -50,21 +51,79 @@ class PurpleAirProvider(AQIProvider):
             raise ValueError("PurpleAir requires credentials (PURPLEAIR_API_KEY)")
         return {"X-API-Key": self.api_key}
 
+    _MAX_RETRIES = 5
+
+    def _get(self, url: str, params: dict) -> dict:
+        """GET with retry on HTTP 429 (honor Retry-After, else exp. backoff)."""
+        delay = 2.0
+        for attempt in range(self._MAX_RETRIES + 1):
+            resp = self.session.get(
+                url, headers=self._headers(), params=params, timeout=120)
+            if resp.status_code == 429 and attempt < self._MAX_RETRIES:
+                header = resp.headers.get("Retry-After")
+                try:
+                    wait = float(header) if header is not None else delay
+                except (TypeError, ValueError):
+                    wait = delay
+                time.sleep(wait)
+                delay = min(delay * 2, 60.0)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        resp.raise_for_status()
+        return resp.json()
+
     def _list_sensors(self, bbox) -> list[dict]:
-        resp = self.session.get(
+        payload = self._get(
             _SENSORS_URL,
-            headers=self._headers(),
-            params={
-                "fields": "latitude,longitude",
+            {
+                "fields": "latitude,longitude,last_seen,date_created",
+                "location_type": 0,
                 "nwlng": bbox.min_lon, "nwlat": bbox.max_lat,
                 "selng": bbox.max_lon, "selat": bbox.min_lat,
             },
-            timeout=120,
         )
-        resp.raise_for_status()
-        payload = resp.json()
         fields = payload["fields"]
         return [dict(zip(fields, row)) for row in payload["data"]]
+
+    @staticmethod
+    def _filter_sensors(sensors: list[dict], geometry: dict,
+                        start: date, end: date) -> list[dict]:
+        """Keep sensors active in the window and inside the county polygon.
+
+        A sensor's active interval [date_created, last_seen] must overlap the
+        requested [start, end] window, and its location must be in the polygon.
+        """
+        start_ts = int(
+            datetime(start.year, start.month, start.day, tzinfo=timezone.utc).timestamp()
+        )
+        end_ts = int(
+            (datetime(end.year, end.month, end.day, tzinfo=timezone.utc)
+             + timedelta(days=1)).timestamp()
+        )
+        kept = []
+        dropped_incomplete = 0
+        for s in sensors:
+            last_seen = s.get("last_seen")
+            created = s.get("date_created")
+            lat = s.get("latitude")
+            lon = s.get("longitude")
+            if None in (last_seen, created, lat, lon):
+                # We requested these fields; a missing value means an unexpected
+                # API response shape, not a normal sensor — surface it.
+                dropped_incomplete += 1
+                continue
+            if not (last_seen >= start_ts and created <= end_ts):
+                continue
+            if not point_in_polygon(lon, lat, geometry):
+                continue
+            kept.append(s)
+        if dropped_incomplete:
+            warnings.warn(
+                f"purpleair: dropped {dropped_incomplete} sensor(s) missing "
+                "last_seen/date_created/location fields"
+            )
+        return kept
 
     def _get_history(self, sensor_id, start: date, end: date, average: int,
                      fields: list[str]) -> dict:
@@ -72,19 +131,15 @@ class PurpleAirProvider(AQIProvider):
         # end date is inclusive: request through the end of that day, capped at now.
         end_ts = datetime(end.year, end.month, end.day, tzinfo=timezone.utc) + timedelta(days=1)
         end_ts = min(end_ts, datetime.now(timezone.utc))
-        resp = self.session.get(
+        return self._get(
             _HISTORY_URL.format(sensor_id=sensor_id),
-            headers=self._headers(),
-            params={
+            {
                 "start_timestamp": int(start_ts.timestamp()),
                 "end_timestamp": int(end_ts.timestamp()),
                 "average": average,
                 "fields": ",".join(fields),
             },
-            timeout=120,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     def _history_chunked(self, sensor_id, start: date, end: date, average: int,
                          fields: list[str]):
@@ -157,6 +212,10 @@ class PurpleAirProvider(AQIProvider):
         average = self.resolve_cadence(cadence)
         bbox = bbox_for_county(county_fips)
         sensors = self._list_sensors(bbox)
+        geometry = county_polygon(county_fips)
+        sensors = self._filter_sensors(sensors, geometry, start, end)
+        if not sensors:
+            return empty_frame()
         # PurpleAir returns time_stamp automatically; do not request it.
         fields = ["humidity"] + [
             f for f, (p, _) in _FIELD_MAP.items() if p in wanted
