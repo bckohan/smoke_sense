@@ -1,0 +1,17 @@
+{
+  "Header": [{"status": "Success"}],
+  "Data": [
+    {
+      "state_code": "06", "county_code": "037", "site_number": "1103",
+      "parameter_code": "88101", "latitude": 34.0, "longitude": -118.2,
+      "date_gmt": "2023-07-01", "time_gmt": "00:00",
+      "sample_measurement": 9.0, "units_of_measure": "Micrograms/cubic meter (LC)"
+    },
+    {
+      "state_code": "06", "county_code": "037", "site_number": "1103",
+      "parameter_code": "88101", "latitude": 34.0, "longitude": -118.2,
+      "date_gmt": "2023-07-01", "time_gmt": "01:00",
+      "sample_measurement": 9.0, "units_of_measure": "Micrograms/cubic meter (LC)"
+    }
+  ]
+}

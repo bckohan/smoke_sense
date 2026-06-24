@@ -1,11 +1,9 @@
 from typer import Typer
 
-from .fetch import fetch
-from .forecast import forecast
-from .visualize import visualize
+from . import fetch, forecast, visualize
 
 app = Typer()
 
-app.command()(fetch)
-app.command()(forecast)
-app.command()(visualize)
+app.command()(fetch.fetch)
+app.command()(forecast.forecast)
+app.command()(visualize.visualize)

@@ -1,0 +1,61 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-23-aqi-fetch.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Project setup — deps and pytest",
+      "status": "completed",
+      "description": "**Goal:** Add pandas/pyarrow/requests runtime deps and pytest dev dep; create tests scaffolding.\n\n**Files:** Modify pyproject.toml; Create tests/__init__.py, tests/conftest.py\n\n**Verify:** `uv run pytest -q` exits 0\n\n```json:metadata\n{\"files\": [\"pyproject.toml\", \"tests/__init__.py\", \"tests/conftest.py\"], \"verifyCommand\": \"uv run pytest -q\", \"acceptanceCriteria\": [\"pandas/pyarrow/requests runtime deps, pytest dev dep\", \"pytest collects 0 tests without error\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Common data format (data.py)",
+      "status": "completed",
+      "blockedBy": [0],
+      "description": "**Goal:** Pollutant enum, schema (COLUMNS), validate, empty_frame, read/write_parquet.\n\n**Files:** Create src/smoke_sense/data.py, tests/test_data.py\n\n**Verify:** `uv run pytest tests/test_data.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/data.py\", \"tests/test_data.py\"], \"verifyCommand\": \"uv run pytest tests/test_data.py -v\", \"acceptanceCriteria\": [\"Pollutant maps name/code/unit + from_str\", \"validate coerces dtypes, errors on missing cols and nulls\", \"parquet round-trip preserves dtypes/values\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: AQI computation (aqi.py)",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** NowCast (12h PM, 8h O3) + breakpoint AQI conversion, pure functions.\n\n**Files:** Create src/smoke_sense/aqi.py, tests/test_aqi.py\n\n**Verify:** `uv run pytest tests/test_aqi.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/aqi.py\", \"tests/test_aqi.py\"], \"verifyCommand\": \"uv run pytest tests/test_aqi.py -v\", \"acceptanceCriteria\": [\"nowcast constant->constant, weighted hand-computed case\", \"concentration_to_aqi endpoints + interpolated\", \"compute_aqi returns Int16 series\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Geo resolution (geo.py) + bbox builder",
+      "status": "completed",
+      "blockedBy": [0],
+      "description": "**Goal:** county FIPS -> BBox from bundled parquet; builder script from Census GeoJSON.\n\n**Files:** Create src/smoke_sense/geo.py, scripts/build_county_bbox.py, tests/test_geo.py, src/smoke_sense/_data/; Modify pyproject.toml\n\n**Verify:** `uv run pytest tests/test_geo.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/geo.py\", \"scripts/build_county_bbox.py\", \"tests/test_geo.py\", \"src/smoke_sense/_data/county_bbox.parquet\", \"pyproject.toml\"], \"verifyCommand\": \"uv run pytest tests/test_geo.py -v\", \"acceptanceCriteria\": [\"bbox_for_county returns BBox, raises on unknown\", \"bbox_from_geometry handles Polygon/MultiPolygon\", \"bundled parquet built and loadable\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Provider interface + registry (base.py)",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** AQIProvider ABC + register/get_provider/all_providers registry.\n\n**Files:** Create src/smoke_sense/providers/__init__.py, src/smoke_sense/providers/base.py, tests/test_providers_base.py\n\n**Verify:** `uv run pytest tests/test_providers_base.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/base.py\", \"src/smoke_sense/providers/__init__.py\", \"tests/test_providers_base.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_base.py -v\", \"acceptanceCriteria\": [\"register/get_provider/all_providers work\", \"get_provider raises on unknown\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: EPA AQS provider (aqs.py)",
+      "status": "completed",
+      "blockedBy": [1, 2, 4],
+      "description": "**Goal:** Fetch AQS hourly sampleData by county, per-year split, parse to schema, compute AQI.\n\n**Files:** Create src/smoke_sense/providers/aqs.py, tests/test_providers_aqs.py, tests/fixtures/aqs_sample.json\n\n**Verify:** `uv run pytest tests/test_providers_aqs.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/aqs.py\", \"tests/test_providers_aqs.py\", \"tests/fixtures/aqs_sample.json\"], \"verifyCommand\": \"uv run pytest tests/test_providers_aqs.py -v\", \"acceptanceCriteria\": [\"_year_ranges splits per calendar year\", \"_parse -> valid schema with AQI\", \"unsupported pollutant skipped\"]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: PurpleAir provider (purpleair.py)",
+      "status": "completed",
+      "blockedBy": [1, 2, 3, 4],
+      "description": "**Goal:** Fetch sensor history within county bbox, EPA PM2.5 correction, parse to schema, compute AQI.\n\n**Files:** Create src/smoke_sense/providers/purpleair.py, tests/test_providers_purpleair.py; Modify providers/__init__.py\n\n**Verify:** `uv run pytest tests/test_providers_purpleair.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/purpleair.py\", \"src/smoke_sense/providers/__init__.py\", \"tests/test_providers_purpleair.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_purpleair.py -v\", \"acceptanceCriteria\": [\"epa_correct_pm25 hand-computed\", \"_parse_history corrects + validates with AQI\", \"supported {PM2.5,PM10}, O3 skipped\"]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: CLI orchestration (bin/fetch.py)",
+      "status": "completed",
+      "blockedBy": [1, 4, 5, 6],
+      "description": "**Goal:** Wire Typer fetch command: validate FIPS, resolve providers/creds, fetch per county, write Parquet.\n\n**Files:** Modify src/smoke_sense/bin/fetch.py, src/smoke_sense/providers/purpleair.py; Create tests/test_fetch_cli.py\n\n**Verify:** `uv run pytest -v` + `uv run smoke-sense fetch --help`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/fetch.py\", \"src/smoke_sense/providers/purpleair.py\", \"tests/test_fetch_cli.py\"], \"verifyCommand\": \"uv run pytest -v\", \"acceptanceCriteria\": [\"invalid FIPS exits nonzero with clear msg\", \"per-county providers run, concat, write {fips}_{start}_{end}.parquet\", \"--source defaults to all, --pollutant filters\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-23"
+}
