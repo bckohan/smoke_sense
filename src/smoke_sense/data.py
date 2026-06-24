@@ -59,6 +59,7 @@ COLUMNS: dict[str, str] = {
     "value": "float64",
     "unit": "category",
     "aqi": "Int16",
+    "agg_window": "Int16",
     "source": "category",
 }
 
@@ -69,6 +70,7 @@ REQUIRED_NON_NULL: list[str] = [
     "station_id",
     "pollutant",
     "value",
+    "agg_window",
     "source",
 ]
 

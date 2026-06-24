@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import requests
@@ -33,6 +33,7 @@ _FIELD_MAP = {
 class PurpleAirProvider(AQIProvider):
     name = "purpleair"
     supported = {Pollutant.PM2_5, Pollutant.PM10}
+    supported_cadences = [0, 10, 30, 60, 360, 1440]
 
     def __init__(self, purpleair_key: str | None = None,
                  session: requests.Session | None = None, **kwargs) -> None:
@@ -65,18 +66,19 @@ class PurpleAirProvider(AQIProvider):
         fields = payload["fields"]
         return [dict(zip(fields, row)) for row in payload["data"]]
 
-    def _get_history(self, sensor_id, start: date, end: date, fields: list[str]) -> dict:
+    def _get_history(self, sensor_id, start: date, end: date, average: int,
+                     fields: list[str]) -> dict:
+        start_ts = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+        # end date is inclusive: request through the end of that day, capped at now.
+        end_ts = datetime(end.year, end.month, end.day, tzinfo=timezone.utc) + timedelta(days=1)
+        end_ts = min(end_ts, datetime.now(timezone.utc))
         resp = self.session.get(
             _HISTORY_URL.format(sensor_id=sensor_id),
             headers=self._headers(),
             params={
-                "start_timestamp": int(
-                    datetime(start.year, start.month, start.day, tzinfo=timezone.utc).timestamp()
-                ),
-                "end_timestamp": int(
-                    datetime(end.year, end.month, end.day, tzinfo=timezone.utc).timestamp()
-                ),
-                "average": 60,
+                "start_timestamp": int(start_ts.timestamp()),
+                "end_timestamp": int(end_ts.timestamp()),
+                "average": average,
                 "fields": ",".join(fields),
             },
             timeout=120,
@@ -84,7 +86,31 @@ class PurpleAirProvider(AQIProvider):
         resp.raise_for_status()
         return resp.json()
 
-    def _parse_history(self, payload, sensor_id, lat, lon, county_fips, pollutants):
+    def _history_chunked(self, sensor_id, start: date, end: date, average: int,
+                         fields: list[str]):
+        """Fetch history, splitting the date range on an over-range 400.
+
+        Recursively halves down to single-calendar-day requests (which the API
+        accepts at every cadence); the two halves never overlap. A 400 on a
+        single day is a real error and is surfaced.
+        """
+        try:
+            payload = self._get_history(sensor_id, start, end, average, fields)
+            return payload.get("data", []), payload.get("fields", fields)
+        except requests.HTTPError as exc:
+            status = getattr(exc.response, "status_code", None)
+            if status == 400 and end > start:
+                half = max(1, (end - start).days // 2)
+                mid = start + timedelta(days=half)
+                left_data, left_fields = self._history_chunked(
+                    sensor_id, start, mid - timedelta(days=1), average, fields)
+                right_data, right_fields = self._history_chunked(
+                    sensor_id, mid, end, average, fields)
+                return left_data + right_data, left_fields or right_fields
+            raise
+
+    def _parse_history(self, payload, sensor_id, lat, lon, county_fips, pollutants,
+                       agg: int = 60):
         fields = payload["fields"]
         rows = payload["data"]
         if not rows:
@@ -110,6 +136,7 @@ class PurpleAirProvider(AQIProvider):
                     "value": values,
                     "unit": pollutant.unit,
                     "aqi": pd.NA,
+                    "agg_window": agg,
                     "source": "purpleair",
                 }
             ).dropna(subset=["value"]).sort_values("timestamp")
@@ -119,7 +146,7 @@ class PurpleAirProvider(AQIProvider):
 
         return pd.concat(frames, ignore_index=True) if frames else empty_frame()
 
-    def fetch(self, county_fips, start, end, pollutants):
+    def fetch(self, county_fips, start, end, pollutants, cadence: int = 60):
         wanted = [p for p in pollutants if p in self.supported]
         for p in pollutants:
             if p not in self.supported:
@@ -127,22 +154,23 @@ class PurpleAirProvider(AQIProvider):
         if not wanted:
             return empty_frame()
 
+        average = self.resolve_cadence(cadence)
         bbox = bbox_for_county(county_fips)
         sensors = self._list_sensors(bbox)
-        # PurpleAir returns `time_stamp` automatically as the first history
-        # column and rejects it as a requested field (HTTP 400), so we must not
-        # ask for it explicitly.
+        # PurpleAir returns time_stamp automatically; do not request it.
         fields = ["humidity"] + [
             f for f, (p, _) in _FIELD_MAP.items() if p in wanted
         ]
         frames = []
         for sensor in sensors:
-            payload = self._get_history(sensor["sensor_index"], start, end, fields)
+            rows, resp_fields = self._history_chunked(
+                sensor["sensor_index"], start, end, average, fields)
             frames.append(
                 self._parse_history(
-                    payload, sensor["sensor_index"],
+                    {"fields": resp_fields, "data": rows},
+                    sensor["sensor_index"],
                     sensor["latitude"], sensor["longitude"],
-                    county_fips, wanted,
+                    county_fips, wanted, average,
                 )
             )
         return pd.concat(frames, ignore_index=True) if frames else empty_frame()

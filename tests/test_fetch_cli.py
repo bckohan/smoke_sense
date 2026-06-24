@@ -26,6 +26,7 @@ def _fake_frame(county_fips: str) -> pd.DataFrame:
                     "value": [9.0],
                     "unit": ["µg/m³"],
                     "aqi": [50],
+                    "agg_window": [60],
                     "source": ["aqs"],
                 }
             ),
@@ -44,17 +45,22 @@ def test_invalid_fips_exits_nonzero(tmp_path):
     assert "5-digit" in result.output
 
 
-def test_fetch_writes_parquet(tmp_path, monkeypatch):
+def test_fetch_writes_day_files(tmp_path, monkeypatch):
     from smoke_sense.bin import fetch as fetch_mod
 
     class FakeProvider:
-        def fetch(self, county_fips, start, end, pollutants):
+        name = "aqs"
+        supported_cadences = [60]
+
+        def resolve_cadence(self, requested):
+            return 60
+
+        def fetch(self, county_fips, start, end, pollutants, cadence):
             return _fake_frame(county_fips)
 
     monkeypatch.setattr(
         fetch_mod, "_resolve_providers", lambda sources, creds: [FakeProvider()]
     )
-
     result = runner.invoke(
         app,
         ["fetch", "06037", "--start", "2023-07-01", "--end", "2023-07-02",
@@ -62,17 +68,26 @@ def test_fetch_writes_parquet(tmp_path, monkeypatch):
          "--output", str(tmp_path)],
     )
     assert result.exit_code == 0, result.output
-    out = tmp_path / "06037_2023-07-01_2023-07-02.parquet"
+    out = tmp_path / "06037" / "2023-07-01.parquet"
     assert out.exists()
     back = data.read_parquet(out)
     assert back["county_fips"].iloc[0] == "06037"
 
 
-def test_end_defaults_to_today(tmp_path, monkeypatch):
+def test_cadence_option_accepted(tmp_path, monkeypatch):
     from smoke_sense.bin import fetch as fetch_mod
 
+    seen = {}
+
     class FakeProvider:
-        def fetch(self, county_fips, start, end, pollutants):
+        name = "aqs"
+        supported_cadences = [60]
+
+        def resolve_cadence(self, requested):
+            seen["requested"] = requested
+            return 60
+
+        def fetch(self, county_fips, start, end, pollutants, cadence):
             return _fake_frame(county_fips)
 
     monkeypatch.setattr(
@@ -80,13 +95,12 @@ def test_end_defaults_to_today(tmp_path, monkeypatch):
     )
     result = runner.invoke(
         app,
-        ["fetch", "06037", "--start", "2023-07-01",
-         "--credentials", str(tmp_path / "absent.json"),
+        ["fetch", "06037", "--start", "2023-07-01", "--end", "2023-07-01",
+         "--cadence", "THIRTY_MIN", "--credentials", str(tmp_path / "absent.json"),
          "--output", str(tmp_path)],
     )
     assert result.exit_code == 0, result.output
-    today = date.today().isoformat()
-    assert (tmp_path / f"06037_2023-07-01_{today}.parquet").exists()
+    assert seen["requested"] == 30
 
 
 def test_wrong_password_surfaces_clean_error(tmp_path, monkeypatch):

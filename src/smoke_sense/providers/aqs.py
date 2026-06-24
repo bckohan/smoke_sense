@@ -20,6 +20,7 @@ _CODE_TO_POLLUTANT = {p.aqs_code: p for p in Pollutant}
 class EPAAQSProvider(AQIProvider):
     name = "aqs"
     supported = {Pollutant.PM2_5, Pollutant.PM10, Pollutant.O3}
+    supported_cadences = [60]
 
     def __init__(self, email: str | None = None, api_key: str | None = None,
                  session: requests.Session | None = None, **kwargs) -> None:
@@ -47,7 +48,7 @@ class EPAAQSProvider(AQIProvider):
         resp.raise_for_status()
         return resp.json()
 
-    def _parse(self, payload: dict, county_fips: str) -> pd.DataFrame:
+    def _parse(self, payload: dict, county_fips: str, agg: int = 60) -> pd.DataFrame:
         """Convert an AQS sampleData payload to a common-schema frame."""
         records = payload.get("Data", [])
         if not records:
@@ -77,6 +78,7 @@ class EPAAQSProvider(AQIProvider):
                     lambda c: _CODE_TO_POLLUTANT[c].unit
                 ),
                 "aqi": pd.NA,
+                "agg_window": agg,
                 "source": "aqs",
             }
         )
@@ -98,7 +100,7 @@ class EPAAQSProvider(AQIProvider):
             parts.append(group)
         return pd.concat(parts, ignore_index=True)
 
-    def fetch(self, county_fips, start, end, pollutants):
+    def fetch(self, county_fips, start, end, pollutants, cadence: int = 60):
         wanted = [p for p in pollutants if p in self.supported]
         for p in pollutants:
             if p not in self.supported:
@@ -106,6 +108,7 @@ class EPAAQSProvider(AQIProvider):
         if not wanted:
             return empty_frame()
 
+        agg = self.resolve_cadence(cadence)
         state, county = county_fips[:2], county_fips[2:]
         frames = []
         for sub_start, sub_end in self._year_ranges(start, end):
@@ -120,5 +123,5 @@ class EPAAQSProvider(AQIProvider):
                     "county": county,
                 }
             )
-            frames.append(self._parse(payload, county_fips))
+            frames.append(self._parse(payload, county_fips, agg))
         return pd.concat(frames, ignore_index=True) if frames else empty_frame()

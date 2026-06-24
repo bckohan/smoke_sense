@@ -47,6 +47,12 @@ def test_empty_frame_validates():
     assert len(out) == 0
 
 
+def test_validate_includes_agg_window(sample_rows):
+    out = data.validate(sample_rows)
+    assert "agg_window" in out.columns
+    assert str(out["agg_window"].dtype) == "Int16"
+
+
 def test_parquet_round_trip(tmp_path, sample_rows):
     df = data.validate(sample_rows)
     path = tmp_path / "out.parquet"

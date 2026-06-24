@@ -64,3 +64,9 @@ def test_parse_drops_unknown_parameter_codes():
 
 def test_supported_pollutants():
     assert EPAAQSProvider.supported == {Pollutant.PM2_5, Pollutant.PM10, Pollutant.O3}
+
+
+def test_resolve_cadence_always_hourly():
+    provider = EPAAQSProvider(email="a@b.com", api_key="key")
+    assert provider.resolve_cadence(10) == 60
+    assert provider.resolve_cadence(1440) == 60

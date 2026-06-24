@@ -20,6 +20,7 @@ def sample_rows() -> pd.DataFrame:
             "value": [12.3, 15.1],
             "unit": ["µg/m³", "µg/m³"],
             "aqi": [52, 58],
+            "agg_window": [60, 60],
             "source": ["aqs", "aqs"],
         }
     )

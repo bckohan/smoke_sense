@@ -2,6 +2,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
+import requests
 
 from smoke_sense import data
 from smoke_sense.data import Pollutant
@@ -9,11 +10,13 @@ from smoke_sense.providers.purpleair import PurpleAirProvider, epa_correct_pm25
 
 
 class _FakeResp:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self._payload = payload
+        self.status_code = status_code
 
     def raise_for_status(self):
-        pass
+        if self.status_code >= 400:
+            raise requests.HTTPError(response=self)
 
     def json(self):
         return self._payload
@@ -32,7 +35,11 @@ class _FakeSession:
                 {"fields": ["sensor_index", "latitude", "longitude"],
                  "data": [[262253, 33.75, -118.33]]}
             )
-        # history endpoint — PurpleAir always returns time_stamp as the first column
+        # A single inclusive day spans 86400s; this simulated server accepts one
+        # day and rejects larger ranges, forcing the chunker down to day chunks.
+        span = params["end_timestamp"] - params["start_timestamp"]
+        if span > 86400 + 3600:
+            raise requests.HTTPError(response=_FakeResp({}, status_code=400))
         return _FakeResp(
             {"fields": ["time_stamp", "humidity", "pm2.5_cf_1", "pm10.0_cf_1"],
              "data": [[1781996400, 44, 1.8, 3.2]]}
@@ -95,3 +102,16 @@ def test_history_request_does_not_request_time_stamp_field():
         assert "time_stamp" not in requested
     # response still carries time_stamp, so parsing produced rows
     assert not df.empty
+
+
+def test_fetch_chunks_large_range_on_400():
+    session = _FakeSession()
+    provider = PurpleAirProvider(purpleair_key="key", session=session)
+    df = provider.fetch(
+        "06037", date(2026, 6, 1), date(2026, 6, 5),
+        [Pollutant.PM2_5], cadence=10,
+    )
+    history_calls = [c for c in session.calls if "/history" in c["url"]]
+    assert len(history_calls) > 1
+    assert not df.empty
+    assert (df["agg_window"] == 10).all()

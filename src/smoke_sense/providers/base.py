@@ -11,6 +11,7 @@ from datetime import date
 
 import pandas as pd
 
+from ..cadence import resolve_cadence
 from ..data import Pollutant
 
 _REGISTRY: dict[str, type["AQIProvider"]] = {}
@@ -21,10 +22,15 @@ class AQIProvider(ABC):
 
     name: str
     supported: set[Pollutant]
+    supported_cadences: list[int]
 
     def __init__(self, **kwargs) -> None:
         # Concrete providers accept credentials/sessions via kwargs.
         pass
+
+    def resolve_cadence(self, requested: int) -> int:
+        """Actual cadence this provider will use for a requested window."""
+        return resolve_cadence(self.supported_cadences, requested)
 
     @abstractmethod
     def fetch(
@@ -33,6 +39,7 @@ class AQIProvider(ABC):
         start: date,
         end: date,
         pollutants: list[Pollutant],
+        cadence: int = 60,
     ) -> pd.DataFrame:
         """Return a `data`-schema DataFrame for the county/range/pollutants."""
         raise NotImplementedError

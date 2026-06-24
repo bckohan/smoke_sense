@@ -1,0 +1,39 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-24-incremental-fetch-cadence.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Cadence enum (cadence.py)",
+      "status": "completed",
+      "description": "**Goal:** Name-valued Cadence enum with .minutes + resolve_cadence.\n\n**Files:** Create src/smoke_sense/cadence.py, tests/test_cadence.py\n\n**Verify:** `uv run pytest tests/test_cadence.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/cadence.py\", \"tests/test_cadence.py\"], \"verifyCommand\": \"uv run pytest tests/test_cadence.py -v\", \"acceptanceCriteria\": [\"minutes mapping\", \"resolve_cadence rule\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Add agg_window column (data.py)",
+      "status": "completed",
+      "description": "**Goal:** Add required agg_window Int16 column; update producers and fixtures.\n\n**Files:** data.py, providers/aqs.py, providers/purpleair.py, tests/conftest.py, tests/test_fetch_cli.py, tests/test_data.py\n\n**Verify:** `uv run pytest -q`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/data.py\", \"src/smoke_sense/providers/aqs.py\", \"src/smoke_sense/providers/purpleair.py\", \"tests/conftest.py\", \"tests/test_fetch_cli.py\", \"tests/test_data.py\"], \"verifyCommand\": \"uv run pytest -q\", \"acceptanceCriteria\": [\"agg_window in COLUMNS + REQUIRED_NON_NULL\", \"providers emit agg_window\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Per-day store (store.py)",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** Per-day Parquet layout, finer-wins merge, multi-day split, coverage.\n\n**Files:** Create src/smoke_sense/store.py, tests/test_store.py\n\n**Verify:** `uv run pytest tests/test_store.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/store.py\", \"tests/test_store.py\"], \"verifyCommand\": \"uv run pytest tests/test_store.py -v\", \"acceptanceCriteria\": [\"write splits by day\", \"merge finer-wins\", \"coverage finest per (date,source)\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Cadence-aware providers + chunking",
+      "status": "completed",
+      "blockedBy": [0, 1],
+      "description": "**Goal:** base cadence interface; aqs records agg; purpleair cadence->average + adaptive chunking + end-day-inclusive.\n\n**Files:** providers/base.py, providers/aqs.py, providers/purpleair.py, tests/test_providers_aqs.py, tests/test_providers_purpleair.py\n\n**Verify:** `uv run pytest tests/test_providers_aqs.py tests/test_providers_purpleair.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/base.py\", \"src/smoke_sense/providers/aqs.py\", \"src/smoke_sense/providers/purpleair.py\", \"tests/test_providers_aqs.py\", \"tests/test_providers_purpleair.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_aqs.py tests/test_providers_purpleair.py -v\", \"acceptanceCriteria\": [\"resolve_cadence per provider\", \"PA maps cadence->average + agg_window\", \"PA chunks 400 to 1 day\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Orchestration (fetcher.py) + CLI rewrite",
+      "status": "completed",
+      "blockedBy": [2, 3],
+      "description": "**Goal:** Gap-detecting fetcher + thin CLI with --cadence/--refetch writing to per-day store.\n\n**Files:** Create src/smoke_sense/fetcher.py, tests/test_fetcher.py; Modify src/smoke_sense/bin/fetch.py, tests/test_fetch_cli.py\n\n**Verify:** `uv run pytest tests/test_fetcher.py tests/test_fetch_cli.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/fetcher.py\", \"tests/test_fetcher.py\", \"src/smoke_sense/bin/fetch.py\", \"tests/test_fetch_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_fetcher.py tests/test_fetch_cli.py -v\", \"acceptanceCriteria\": [\"hybrid skip/gap/today\", \"--refetch full range\", \"CLI per-day files + --cadence\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-24"
+}
