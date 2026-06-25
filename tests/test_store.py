@@ -66,3 +66,16 @@ def test_coverage_reports_finest_per_day_source(tmp_path):
 
 def test_coverage_empty_when_no_county_dir(tmp_path):
     assert store.coverage(tmp_path, "99999") == {}
+
+
+def test_read_range_reads_only_in_range_days(tmp_path):
+    for d, v in [("2026-06-16", 1.0), ("2026-06-17", 2.0), ("2026-06-18", 3.0)]:
+        store.write(tmp_path, "06037", pd.DataFrame([_row(f"{d}T01:00:00", v, 10)]))
+    df = store.read_range(tmp_path, "06037", date(2026, 6, 17), date(2026, 6, 18))
+    assert sorted(df["value"].tolist()) == [2.0, 3.0]
+
+
+def test_read_range_empty_when_county_absent(tmp_path):
+    df = store.read_range(tmp_path, "99999", date(2026, 6, 1), date(2026, 6, 2))
+    assert df.empty
+    assert list(df.columns) == list(data.COLUMNS)

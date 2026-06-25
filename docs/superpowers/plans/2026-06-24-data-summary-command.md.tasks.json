@@ -1,0 +1,25 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-24-data-summary-command.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: store.read_range",
+      "status": "completed",
+      "description": "**Goal:** Read+concat a county's day files for a date range, restricted to window.\n\n**Files:** store.py, tests/test_store.py\n\n**Verify:** `uv run pytest tests/test_store.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/store.py\", \"tests/test_store.py\"], \"verifyCommand\": \"uv run pytest tests/test_store.py -v\", \"acceptanceCriteria\": [\"reads in-range day files, concatenates\", \"restricts to [start, end+1day)\", \"empty frame when absent\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: summary.summarize",
+      "status": "completed",
+      "description": "**Goal:** Pure aggregation of a frame into the summary dict.\n\n**Files:** Create src/smoke_sense/summary.py, tests/test_summary.py\n\n**Verify:** `uv run pytest tests/test_summary.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/summary.py\", \"tests/test_summary.py\"], \"verifyCommand\": \"uv run pytest tests/test_summary.py -v\", \"acceptanceCriteria\": [\"coverage incl missing days/first-last/rows\", \"breakdown grouping\", \"per-pollutant stats null-safe aqi\", \"empty frame\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: summary CLI (bin/summary.py)",
+      "status": "completed",
+      "blockedBy": [0, 1],
+      "description": "**Goal:** `smoke-sense summary` command: read store -> summarize -> render / --json.\n\n**Files:** Create src/smoke_sense/bin/summary.py, tests/test_summary_cli.py; Modify src/smoke_sense/bin/__init__.py\n\n**Verify:** `uv run pytest tests/test_summary_cli.py -v` then `uv run pytest -q`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/summary.py\", \"src/smoke_sense/bin/__init__.py\", \"tests/test_summary_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_summary_cli.py -v\", \"acceptanceCriteria\": [\"--json parseable {fips: summary}\", \"default renders; empty no-data line\", \"invalid FIPS non-zero\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-24"
+}

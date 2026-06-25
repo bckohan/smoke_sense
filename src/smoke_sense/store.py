@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -56,3 +56,27 @@ def coverage(data_dir: str | Path, fips: str) -> dict[tuple[date, str], int]:
         for source, group in df.groupby("source", observed=True):
             result[(day, str(source))] = int(group["agg_window"].min())
     return result
+
+
+def read_range(data_dir: str | Path, fips: str, start: date, end: date) -> pd.DataFrame:
+    """Concatenate the county's day files for dates in [start, end].
+
+    Reads {data_dir}/{fips}/{day}.parquet for each day in the inclusive range
+    that has a file, concatenates them, and returns the validated frame
+    restricted to timestamps in [start 00:00 UTC, (end + 1 day) 00:00 UTC).
+    Returns an empty schema frame if nothing is present.
+    """
+    frames = []
+    day = start
+    while day <= end:
+        path = day_path(data_dir, fips, day)
+        if path.exists():
+            frames.append(data.read_parquet(path))
+        day += timedelta(days=1)
+    if not frames:
+        return data.empty_frame()
+    df = pd.concat(frames, ignore_index=True)
+    start_ts = pd.Timestamp(start, tz="UTC")
+    end_ts = pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)
+    window = (df["timestamp"] >= start_ts) & (df["timestamp"] < end_ts)
+    return data.validate(df[window])
