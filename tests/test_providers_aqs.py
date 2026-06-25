@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -70,3 +71,28 @@ def test_resolve_cadence_always_hourly():
     provider = EPAAQSProvider(email="a@b.com", api_key="key")
     assert provider.resolve_cadence(10) == 60
     assert provider.resolve_cadence(1440) == 60
+
+
+class _LogResp:
+    status_code = 200
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"Data": []}
+
+
+class _LogSession:
+    def get(self, url, params=None, timeout=None):
+        return _LogResp()
+
+
+def test_request_logs_redact_credentials(caplog):
+    provider = EPAAQSProvider(email="me@example.com", api_key="SECRETKEY",
+                              session=_LogSession())
+    with caplog.at_level(logging.INFO, logger="smoke_sense"):
+        provider._request({"email": "me@example.com", "key": "SECRETKEY", "state": "06"})
+    assert "GET" in caplog.text
+    assert "SECRETKEY" not in caplog.text
+    assert "me@example.com" not in caplog.text

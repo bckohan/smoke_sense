@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 import warnings
 from datetime import date, datetime, timedelta, timezone
@@ -28,6 +29,8 @@ _FIELD_MAP = {
     "pm2.5_cf_1": (Pollutant.PM2_5, True),
     "pm10.0_cf_1": (Pollutant.PM10, False),
 }
+
+logger = logging.getLogger(__name__)
 
 
 @register
@@ -57,14 +60,20 @@ class PurpleAirProvider(AQIProvider):
         """GET with retry on HTTP 429 (honor Retry-After, else exp. backoff)."""
         delay = 2.0
         for attempt in range(self._MAX_RETRIES + 1):
+            started = time.monotonic()
             resp = self.session.get(
                 url, headers=self._headers(), params=params, timeout=120)
+            elapsed_ms = (time.monotonic() - started) * 1000
+            logger.info("GET %s params=%s -> %s (%.0f ms)",
+                        url, params, resp.status_code, elapsed_ms)
             if resp.status_code == 429 and attempt < self._MAX_RETRIES:
                 header = resp.headers.get("Retry-After")
                 try:
                     wait = float(header) if header is not None else delay
                 except (TypeError, ValueError):
                     wait = delay
+                logger.info("429 from %s; retrying in %.0fs (attempt %d/%d)",
+                            url, wait, attempt + 1, self._MAX_RETRIES)
                 time.sleep(wait)
                 delay = min(delay * 2, 60.0)
                 continue
@@ -207,7 +216,7 @@ class PurpleAirProvider(AQIProvider):
             if p not in self.supported:
                 warnings.warn(f"{self.name}: pollutant {p.value} not supported, skipping")
         if not wanted:
-            return empty_frame()
+            return
 
         average = self.resolve_cadence(cadence)
         bbox = bbox_for_county(county_fips)
@@ -215,21 +224,19 @@ class PurpleAirProvider(AQIProvider):
         geometry = county_polygon(county_fips)
         sensors = self._filter_sensors(sensors, geometry, start, end)
         if not sensors:
-            return empty_frame()
+            return
         # PurpleAir returns time_stamp automatically; do not request it.
         fields = ["humidity"] + [
             f for f, (p, _) in _FIELD_MAP.items() if p in wanted
         ]
-        frames = []
         for sensor in sensors:
             rows, resp_fields = self._history_chunked(
                 sensor["sensor_index"], start, end, average, fields)
-            frames.append(
-                self._parse_history(
-                    {"fields": resp_fields, "data": rows},
-                    sensor["sensor_index"],
-                    sensor["latitude"], sensor["longitude"],
-                    county_fips, wanted, average,
-                )
+            chunk = self._parse_history(
+                {"fields": resp_fields, "data": rows},
+                sensor["sensor_index"],
+                sensor["latitude"], sensor["longitude"],
+                county_fips, wanted, average,
             )
-        return pd.concat(frames, ignore_index=True) if frames else empty_frame()
+            if not chunk.empty:
+                yield chunk

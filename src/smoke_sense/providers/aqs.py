@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 import warnings
 from datetime import date
 
@@ -10,10 +12,13 @@ import requests
 
 from ..aqi import compute_aqi
 from ..data import COLUMNS, Pollutant, empty_frame
+from ..logutil import redact
 from .base import AQIProvider, register
 
 _BASE_URL = "https://aqs.epa.gov/data/api/sampleData/byCounty"
 _CODE_TO_POLLUTANT = {p.aqs_code: p for p in Pollutant}
+
+logger = logging.getLogger(__name__)
 
 
 @register
@@ -44,7 +49,11 @@ class EPAAQSProvider(AQIProvider):
             raise ValueError(
                 "EPA AQS requires credentials (AQS_EMAIL / AQS_API_KEY)"
             )
+        started = time.monotonic()
         resp = self.session.get(_BASE_URL, params=params, timeout=120)
+        elapsed_ms = (time.monotonic() - started) * 1000
+        logger.info("GET %s params=%s -> %s (%.0f ms)", _BASE_URL,
+                    redact(params, {"email", "key"}), resp.status_code, elapsed_ms)
         resp.raise_for_status()
         return resp.json()
 
@@ -106,11 +115,10 @@ class EPAAQSProvider(AQIProvider):
             if p not in self.supported:
                 warnings.warn(f"{self.name}: pollutant {p.value} not supported, skipping")
         if not wanted:
-            return empty_frame()
+            return
 
         agg = self.resolve_cadence(cadence)
         state, county = county_fips[:2], county_fips[2:]
-        frames = []
         for sub_start, sub_end in self._year_ranges(start, end):
             payload = self._request(
                 {
@@ -123,5 +131,6 @@ class EPAAQSProvider(AQIProvider):
                     "county": county,
                 }
             )
-            frames.append(self._parse(payload, county_fips, agg))
-        return pd.concat(frames, ignore_index=True) if frames else empty_frame()
+            chunk = self._parse(payload, county_fips, agg)
+            if not chunk.empty:
+                yield chunk

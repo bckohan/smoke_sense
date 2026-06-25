@@ -104,10 +104,11 @@ def test_history_request_does_not_request_time_stamp_field():
     # history field with HTTP 400, so fetch must not include it in `fields`.
     session = _FakeSession()
     provider = PurpleAirProvider(purpleair_key="key", session=session)
-    df = provider.fetch(
+    chunks = list(provider.fetch(
         "06037", date(2026, 6, 16), date(2026, 6, 24),
         [Pollutant.PM2_5, Pollutant.PM10],
-    )
+    ))
+    df = pd.concat(chunks, ignore_index=True) if chunks else data.empty_frame()
     history_calls = [c for c in session.calls if "/history" in c["url"]]
     assert history_calls, "expected at least one history call"
     for call in history_calls:
@@ -120,10 +121,11 @@ def test_history_request_does_not_request_time_stamp_field():
 def test_fetch_chunks_large_range_on_400():
     session = _FakeSession()
     provider = PurpleAirProvider(purpleair_key="key", session=session)
-    df = provider.fetch(
+    chunks = list(provider.fetch(
         "06037", date(2026, 6, 1), date(2026, 6, 5),
         [Pollutant.PM2_5], cadence=10,
-    )
+    ))
+    df = pd.concat(chunks, ignore_index=True) if chunks else data.empty_frame()
     history_calls = [c for c in session.calls if "/history" in c["url"]]
     assert len(history_calls) > 1
     assert not df.empty
@@ -198,9 +200,10 @@ def test_fetch_excludes_out_of_polygon_sensor(monkeypatch):
     )
     session = _FakeSession()
     provider = PurpleAirProvider(purpleair_key="k", session=session)
-    df = provider.fetch(
+    chunks = list(provider.fetch(
         "06037", date(2026, 6, 16), date(2026, 6, 17), [Pollutant.PM2_5], cadence=10
-    )
+    ))
+    df = pd.concat(chunks, ignore_index=True) if chunks else data.empty_frame()
     history_calls = [c for c in session.calls if "/history" in c["url"]]
     assert history_calls == []
     assert df.empty

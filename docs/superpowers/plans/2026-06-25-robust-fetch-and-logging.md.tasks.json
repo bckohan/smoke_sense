@@ -1,0 +1,19 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-25-robust-fetch-and-logging.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Streaming providers + durable buffered fetcher",
+      "status": "completed",
+      "description": "**Goal:** Providers yield chunks; fetcher buffers per county and flushes (writes once) on success OR on Exception/KeyboardInterrupt, then re-raises.\n\n**Files:** providers/base.py, providers/aqs.py, providers/purpleair.py, fetcher.py, tests/test_fetcher.py, tests/test_providers_purpleair.py, tests/test_fetch_cli.py\n\n**Verify:** `uv run pytest tests/test_fetcher.py tests/test_providers_purpleair.py tests/test_fetch_cli.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/base.py\", \"src/smoke_sense/providers/aqs.py\", \"src/smoke_sense/providers/purpleair.py\", \"src/smoke_sense/fetcher.py\", \"tests/test_fetcher.py\", \"tests/test_providers_purpleair.py\", \"tests/test_fetch_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_fetcher.py tests/test_providers_purpleair.py tests/test_fetch_cli.py -v\", \"acceptanceCriteria\": [\"provider.fetch generator yielding non-empty chunks\", \"fetch_county writes once on success; flushes on Exception+KeyboardInterrupt then re-raises\", \"full suite passes\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Request logging with redaction + --verbose",
+      "status": "completed",
+      "blockedBy": [0],
+      "description": "**Goal:** Log redacted provider HTTP requests + retries to stderr when -v/--verbose is set.\n\n**Files:** Create src/smoke_sense/logutil.py, tests/test_logutil.py; Modify providers/aqs.py, providers/purpleair.py, bin/fetch.py, tests/test_providers_aqs.py, tests/test_fetch_cli.py\n\n**Verify:** `uv run pytest tests/test_logutil.py tests/test_providers_aqs.py -v` then `uv run pytest -q`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/logutil.py\", \"tests/test_logutil.py\", \"src/smoke_sense/providers/aqs.py\", \"src/smoke_sense/providers/purpleair.py\", \"src/smoke_sense/bin/fetch.py\", \"tests/test_providers_aqs.py\", \"tests/test_fetch_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_logutil.py tests/test_providers_aqs.py -v\", \"acceptanceCriteria\": [\"redact masks secrets, no mutation\", \"AQS _request logs without key/email\", \"_configure_logging toggles stderr INFO handler\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-25"
+}

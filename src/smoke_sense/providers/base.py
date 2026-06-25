@@ -7,6 +7,7 @@ register by name so the CLI can resolve `--source` values and default to all.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from datetime import date
 
 import pandas as pd
@@ -40,8 +41,8 @@ class AQIProvider(ABC):
         end: date,
         pollutants: list[Pollutant],
         cadence: int = 60,
-    ) -> pd.DataFrame:
-        """Return a `data`-schema DataFrame for the county/range/pollutants."""
+    ) -> Iterator[pd.DataFrame]:
+        """Yield `data`-schema DataFrame chunks for the county/range/pollutants."""
         raise NotImplementedError
 
 

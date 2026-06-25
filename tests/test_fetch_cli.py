@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 import pandas as pd
@@ -56,7 +57,7 @@ def test_fetch_writes_day_files(tmp_path, monkeypatch):
             return 60
 
         def fetch(self, county_fips, start, end, pollutants, cadence):
-            return _fake_frame(county_fips)
+            yield _fake_frame(county_fips)
 
     monkeypatch.setattr(
         fetch_mod, "_resolve_providers", lambda sources, creds: [FakeProvider()]
@@ -88,7 +89,7 @@ def test_cadence_option_accepted(tmp_path, monkeypatch):
             return 60
 
         def fetch(self, county_fips, start, end, pollutants, cadence):
-            return _fake_frame(county_fips)
+            yield _fake_frame(county_fips)
 
     monkeypatch.setattr(
         fetch_mod, "_resolve_providers", lambda sources, creds: [FakeProvider()]
@@ -114,3 +115,19 @@ def test_wrong_password_surfaces_clean_error(tmp_path, monkeypatch):
     )
     assert result.exit_code != 0
     assert "could not decrypt" in result.output
+
+
+def test_configure_logging_toggles_handler():
+    from smoke_sense.bin import fetch as fetch_mod
+
+    pkg = logging.getLogger("smoke_sense")
+    before = list(pkg.handlers)
+    try:
+        fetch_mod._configure_logging(False)
+        assert list(pkg.handlers) == before
+        fetch_mod._configure_logging(True)
+        assert len(pkg.handlers) == len(before) + 1
+        assert pkg.level == logging.INFO
+    finally:
+        pkg.handlers = before
+        pkg.setLevel(logging.WARNING)

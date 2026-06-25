@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import binascii
 import json
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
@@ -11,6 +12,7 @@ from typing import List, Optional
 import typer
 from cryptography.fernet import InvalidToken
 from rich.console import Console
+from rich.logging import RichHandler
 
 from .. import credentials as credentials_core
 from .. import fetcher
@@ -27,6 +29,20 @@ DEFAULT_POLLUTANTS = [Pollutant.PM2_5, Pollutant.PM10, Pollutant.O3]
 def _resolve_providers(sources: list[str], creds: dict):
     """Construct provider instances for the requested source names."""
     return [get_provider(name, **creds) for name in sources]
+
+
+def _configure_logging(verbose: bool) -> None:
+    """Attach a stderr Rich handler at INFO to the package logger when verbose."""
+    if not verbose:
+        return
+    pkg_logger = logging.getLogger("smoke_sense")
+    pkg_logger.setLevel(logging.INFO)
+    # Idempotent: don't stack duplicate handlers if called more than once.
+    if any(isinstance(h, RichHandler) for h in pkg_logger.handlers):
+        return
+    pkg_logger.addHandler(
+        RichHandler(console=Console(stderr=True), show_path=False, show_time=False)
+    )
 
 
 def fetch(
@@ -46,8 +62,10 @@ def fetch(
     email: Optional[str] = typer.Option(None, envvar="AQS_EMAIL"),
     api_key: Optional[str] = typer.Option(None, envvar="AQS_API_KEY"),
     purpleair_key: Optional[str] = typer.Option(None, envvar="PURPLEAIR_API_KEY"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Log requests to stderr"),
 ) -> None:
     """Fetch AQI data for the given counties and time range into the store."""
+    _configure_logging(verbose)
     for fips in county_fips:
         if not (len(fips) == 5 and fips.isdigit()):
             raise typer.BadParameter(f"county FIPS must be 5-digit, got {fips!r}")
