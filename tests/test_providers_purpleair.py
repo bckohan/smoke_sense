@@ -5,7 +5,7 @@ import pytest
 import requests
 
 from smoke_sense import data
-from smoke_sense.data import Pollutant
+from smoke_sense.data import Metric
 from smoke_sense.providers.purpleair import PurpleAirProvider, epa_correct_pm25
 
 
@@ -43,8 +43,9 @@ class _FakeSession:
         if span > 86400 + 3600:
             raise requests.HTTPError(response=_FakeResp({}, status_code=400))
         return _FakeResp(
-            {"fields": ["time_stamp", "humidity", "pm2.5_cf_1", "pm10.0_cf_1"],
-             "data": [[1781996400, 44, 1.8, 3.2]]}
+            {"fields": ["time_stamp", "humidity", "pm2.5_cf_1", "pm10.0_cf_1",
+                        "temperature"],
+             "data": [[1781996400, 44, 1.8, 3.2, 68.0]]}
         )
 
 
@@ -65,7 +66,13 @@ def test_epa_correction_hand_computed():
 
 
 def test_supported_pollutants():
-    assert PurpleAirProvider.supported == {Pollutant.PM2_5, Pollutant.PM10}
+    expected = {
+        Metric.PM2_5, Metric.PM2_5_CF1, Metric.PM2_5_ATM,
+        Metric.PM10, Metric.PM10_CF1, Metric.PM10_ATM,
+        Metric.PM1_0_CF1, Metric.PM1_0_ATM,
+        Metric.TEMP, Metric.RH, Metric.PRESSURE, Metric.VOC,
+    }
+    assert PurpleAirProvider.supported_metrics == expected
 
 
 def test_ignores_foreign_credentials_and_fails_fast():
@@ -90,13 +97,32 @@ def test_parse_history_corrects_and_validates():
     provider = PurpleAirProvider(purpleair_key="key")
     df = provider._parse_history(
         payload, sensor_id="123", lat=34.0, lon=-118.2, county_fips="06037",
-        pollutants=[Pollutant.PM2_5, Pollutant.PM10],
+        wanted=[Metric.PM2_5, Metric.PM10], agg=60,
     )
     df = data.validate(df)
-    pm25 = df[df["pollutant"] == Pollutant.PM2_5.value]
+    pm25 = df[df["metric"] == Metric.PM2_5.value]
     assert pm25["value"].iloc[0] == pytest.approx(53.84, abs=1e-6)
     assert (df["source"] == "purpleair").all()
     assert df["station_id"].iloc[0] == "123"
+
+
+def test_parse_history_emits_corrected_and_raw_and_converts_temp():
+    payload = {
+        "fields": ["time_stamp", "humidity", "pm2.5_cf_1", "pm2.5_atm", "temperature"],
+        "data": [[1781996400, 50.0, 100.0, 60.0, 32.0]],
+    }
+    provider = PurpleAirProvider(purpleair_key="k")
+    df = provider._parse_history(
+        payload, sensor_id="123", lat=34.0, lon=-118.2, county_fips="06037",
+        wanted=[Metric.PM2_5, Metric.PM2_5_CF1, Metric.PM2_5_ATM, Metric.TEMP], agg=10)
+    by = {m: df[df["metric"] == m.value]["value"].iloc[0]
+          for m in (Metric.PM2_5, Metric.PM2_5_CF1, Metric.PM2_5_ATM, Metric.TEMP)}
+    assert by[Metric.PM2_5_CF1] == 100.0
+    assert by[Metric.PM2_5_ATM] == 60.0
+    assert by[Metric.PM2_5] == pytest.approx(0.524 * 100 - 0.0862 * 50 + 5.75, abs=1e-6)
+    assert by[Metric.TEMP] == pytest.approx(0.0, abs=1e-9)
+    assert df[df["metric"] == Metric.PM2_5.value]["aqi"].notna().all()
+    assert df[df["metric"] == Metric.TEMP.value]["aqi"].isna().all()
 
 
 def test_history_request_does_not_request_time_stamp_field():
@@ -106,7 +132,7 @@ def test_history_request_does_not_request_time_stamp_field():
     provider = PurpleAirProvider(purpleair_key="key", session=session)
     chunks = list(provider.fetch(
         "06037", date(2026, 6, 16), date(2026, 6, 24),
-        [Pollutant.PM2_5, Pollutant.PM10],
+        [Metric.PM2_5, Metric.PM10],
     ))
     df = pd.concat(chunks, ignore_index=True) if chunks else data.empty_frame()
     history_calls = [c for c in session.calls if "/history" in c["url"]]
@@ -123,7 +149,7 @@ def test_fetch_chunks_large_range_on_400():
     provider = PurpleAirProvider(purpleair_key="key", session=session)
     chunks = list(provider.fetch(
         "06037", date(2026, 6, 1), date(2026, 6, 5),
-        [Pollutant.PM2_5], cadence=10,
+        [Metric.PM2_5], cadence=10,
     ))
     df = pd.concat(chunks, ignore_index=True) if chunks else data.empty_frame()
     history_calls = [c for c in session.calls if "/history" in c["url"]]
@@ -201,7 +227,7 @@ def test_fetch_excludes_out_of_polygon_sensor(monkeypatch):
     session = _FakeSession()
     provider = PurpleAirProvider(purpleair_key="k", session=session)
     chunks = list(provider.fetch(
-        "06037", date(2026, 6, 16), date(2026, 6, 17), [Pollutant.PM2_5], cadence=10
+        "06037", date(2026, 6, 16), date(2026, 6, 17), [Metric.PM2_5], cadence=10
     ))
     df = pd.concat(chunks, ignore_index=True) if chunks else data.empty_frame()
     history_calls = [c for c in session.calls if "/history" in c["url"]]

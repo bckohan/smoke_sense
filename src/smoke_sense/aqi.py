@@ -13,12 +13,12 @@ import math
 
 import pandas as pd
 
-from .data import Pollutant
+from .data import Metric
 
 # Breakpoints: (C_low, C_high, I_low, I_high). Concentration truncated before use.
 # PM tables in µg/m³ (EPA, 2024 revision); O3 in ppm (8-hour).
-_BREAKPOINTS: dict[Pollutant, list[tuple[float, float, int, int]]] = {
-    Pollutant.PM2_5: [
+_BREAKPOINTS: dict[Metric, list[tuple[float, float, int, int]]] = {
+    Metric.PM2_5: [
         (0.0, 9.0, 0, 50),
         (9.1, 35.4, 51, 100),
         (35.5, 55.4, 101, 150),
@@ -26,7 +26,7 @@ _BREAKPOINTS: dict[Pollutant, list[tuple[float, float, int, int]]] = {
         (125.5, 225.4, 201, 300),
         (225.5, 325.4, 301, 500),
     ],
-    Pollutant.PM10: [
+    Metric.PM10: [
         (0, 54, 0, 50),
         (55, 154, 51, 100),
         (155, 254, 101, 150),
@@ -34,7 +34,7 @@ _BREAKPOINTS: dict[Pollutant, list[tuple[float, float, int, int]]] = {
         (355, 424, 201, 300),
         (425, 604, 301, 500),
     ],
-    Pollutant.O3: [
+    Metric.O3: [
         (0.000, 0.054, 0, 50),
         (0.055, 0.070, 51, 100),
         (0.071, 0.085, 101, 150),
@@ -43,15 +43,15 @@ _BREAKPOINTS: dict[Pollutant, list[tuple[float, float, int, int]]] = {
     ],
 }
 
-# Truncation precision (decimal places) per pollutant before breakpoint lookup.
-_TRUNC: dict[Pollutant, int] = {
-    Pollutant.PM2_5: 1,
-    Pollutant.PM10: 0,
-    Pollutant.O3: 3,
+# Truncation precision (decimal places) per metric before breakpoint lookup.
+_TRUNC: dict[Metric, int] = {
+    Metric.PM2_5: 1,
+    Metric.PM10: 0,
+    Metric.O3: 3,
 }
 
 
-def concentration_to_aqi(concentration: float, pollutant: Pollutant) -> int | None:
+def concentration_to_aqi(concentration: float, metric: Metric) -> int | None:
     """Convert a concentration to AQI via piecewise-linear breakpoints.
 
     Returns None for missing/negative values or values above the top breakpoint.
@@ -59,24 +59,24 @@ def concentration_to_aqi(concentration: float, pollutant: Pollutant) -> int | No
     if concentration is None or math.isnan(concentration) or concentration < 0:
         return None
 
-    factor = 10 ** _TRUNC[pollutant]
+    factor = 10 ** _TRUNC[metric]
     conc = math.floor(concentration * factor) / factor
 
-    for c_low, c_high, i_low, i_high in _BREAKPOINTS[pollutant]:
+    for c_low, c_high, i_low, i_high in _BREAKPOINTS[metric]:
         if c_low <= conc <= c_high:
             aqi = (i_high - i_low) / (c_high - c_low) * (conc - c_low) + i_low
             return round(aqi)
     return None
 
 
-def nowcast(series: pd.Series, pollutant: Pollutant) -> pd.Series:
+def nowcast(series: pd.Series, metric: Metric) -> pd.Series:
     """Compute the NowCast concentration for each timestamp in `series`.
 
     `series` must be hourly and time-indexed (ascending). PM uses a 12-hour
     weighted window; O3 uses an 8-hour trailing mean.
     """
     series = series.sort_index()
-    if pollutant is Pollutant.O3:
+    if metric is Metric.O3:
         return series.rolling(window=8, min_periods=6).mean()
 
     window = 12
@@ -106,8 +106,8 @@ def nowcast(series: pd.Series, pollutant: Pollutant) -> pd.Series:
     return pd.Series(out, index=series.index, dtype="float64")
 
 
-def compute_aqi(series: pd.Series, pollutant: Pollutant) -> pd.Series:
+def compute_aqi(series: pd.Series, metric: Metric) -> pd.Series:
     """Map an hourly concentration series to a nullable Int16 AQI series."""
-    nc = nowcast(series, pollutant)
-    aqi_values = [concentration_to_aqi(c, pollutant) for c in nc]
+    nc = nowcast(series, metric)
+    aqi_values = [concentration_to_aqi(c, metric) for c in nc]
     return pd.Series(aqi_values, index=series.index, dtype="Int16")

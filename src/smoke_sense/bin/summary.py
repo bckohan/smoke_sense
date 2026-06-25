@@ -41,29 +41,29 @@ def _render(fips: str, s: dict) -> None:
     console.print(coverage)
 
     breakdown = Table(title="Breakdown")
-    for col in ("source", "pollutant", "agg_window", "rows"):
+    for col in ("source", "metric", "agg_window", "rows"):
         breakdown.add_column(col)
     for row in s["breakdown"]:
-        breakdown.add_row(row["source"], row["pollutant"],
+        breakdown.add_row(row["source"], row["metric"],
                           str(row["agg_window"]), str(row["rows"]))
     console.print(breakdown)
 
-    pollutants = Table(title="Pollutants")
-    for col in ("pollutant", "stations", "sources",
+    metrics = Table(title="Metrics")
+    for col in ("metric", "stations", "sources",
                 "min", "p25", "p50", "mean", "p75", "max", "aqi min/mean/max"):
-        pollutants.add_column(col)
-    for row in s["pollutants"]:
+        metrics.add_column(col)
+    for row in s["metrics"]:
         v = row["value"]
         a = row["aqi"]
         aqi_str = "-" if a is None else f"{a['min']}/{a['mean']:.0f}/{a['max']}"
-        # `:g` keeps real digits for small-magnitude pollutants (e.g. O3 ~0.04 ppm)
+        # `:g` keeps real digits for small-magnitude metrics (e.g. O3 ~0.04 ppm)
         # that `:.1f` would collapse to 0.0.
-        pollutants.add_row(
-            row["pollutant"], str(row["stations"]), ",".join(row["sources"]),
+        metrics.add_row(
+            row["metric"], str(row["stations"]), ",".join(row["sources"]),
             f"{v['min']:g}", f"{v['p25']:g}", f"{v['p50']:g}", f"{v['mean']:g}",
             f"{v['p75']:g}", f"{v['max']:g}", aqi_str,
         )
-    console.print(pollutants)
+    console.print(metrics)
 
 
 def summary(

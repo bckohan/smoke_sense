@@ -10,11 +10,35 @@ import pandas as pd
 from . import data
 
 # Identity of an observation; finer agg_window wins on conflict.
-_IDENTITY = ["timestamp", "station_id", "pollutant", "source"]
+_IDENTITY = ["timestamp", "station_id", "metric", "source"]
+
+# Station metadata columns split out of provider frames into stations.parquet.
+_STATION_COLS = ["station_id", "source", "latitude", "longitude"]
 
 
 def day_path(data_dir: str | Path, fips: str, day: date) -> Path:
     return Path(data_dir) / fips / f"{day.isoformat()}.parquet"
+
+
+def stations_path(data_dir: str | Path, fips: str) -> Path:
+    return Path(data_dir) / fips / "stations.parquet"
+
+
+def _merge_stations(data_dir: str | Path, fips: str, df: pd.DataFrame) -> None:
+    """Extract station coordinates into stations.parquet, deduped per station."""
+    if not {"latitude", "longitude"} <= set(df.columns):
+        return
+    new = df[_STATION_COLS].drop_duplicates()
+    path = stations_path(data_dir, fips)
+    frames = [pd.read_parquet(path)] if path.exists() else []
+    frames.append(new)
+    merged = pd.concat(frames, ignore_index=True).drop_duplicates(
+        subset=["station_id", "source"], keep="last"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    merged.astype({"station_id": "string", "source": "string"}).to_parquet(
+        path, index=False, compression="zstd"
+    )
 
 
 def _dedup_finer_wins(df: pd.DataFrame) -> pd.DataFrame:
@@ -38,6 +62,7 @@ def write(data_dir: str | Path, fips: str, df: pd.DataFrame) -> None:
     """Validate `df`, split it by UTC day, and merge each day into its file."""
     if df.empty:
         return
+    _merge_stations(data_dir, fips, df)
     df = data.validate(df)
     days = df["timestamp"].dt.tz_convert("UTC").dt.date
     for day, group in df.groupby(days):
@@ -51,6 +76,8 @@ def coverage(data_dir: str | Path, fips: str) -> dict[tuple[date, str], int]:
     if not county_dir.exists():
         return result
     for f in sorted(county_dir.glob("*.parquet")):
+        if f.name == "stations.parquet":
+            continue
         day = date.fromisoformat(f.stem)
         df = data.read_parquet(f)
         for source, group in df.groupby("source", observed=True):

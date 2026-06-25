@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from smoke_sense.data import Pollutant
+from smoke_sense.data import Metric
 
 
 @pytest.fixture
@@ -14,11 +14,8 @@ def sample_rows() -> pd.DataFrame:
             ),
             "county_fips": ["06037", "06037"],
             "station_id": ["060371103", "060371103"],
-            "latitude": [34.0, 34.0],
-            "longitude": [-118.2, -118.2],
-            "pollutant": [Pollutant.PM2_5.value, Pollutant.PM2_5.value],
+            "metric": [Metric.PM2_5.value, Metric.PM2_5.value],
             "value": [12.3, 15.1],
-            "unit": ["µg/m³", "µg/m³"],
             "aqi": [52, 58],
             "agg_window": [60, 60],
             "source": ["aqs", "aqs"],

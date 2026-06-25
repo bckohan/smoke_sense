@@ -4,15 +4,14 @@ import pandas as pd
 import pytest
 
 from smoke_sense import data, fetcher, store
-from smoke_sense.data import Pollutant
+from smoke_sense.data import Metric
 
 
 def _frame(county_fips, day, source="purpleair", agg=10):
     return data.validate(pd.DataFrame([{
         "timestamp": pd.Timestamp(day, tz="UTC") + pd.Timedelta(hours=1),
         "county_fips": county_fips, "station_id": "s1",
-        "latitude": 34.0, "longitude": -118.2,
-        "pollutant": Pollutant.PM2_5.value, "value": 1.0, "unit": "µg/m³",
+                "metric": Metric.PM2_5.value, "value": 1.0,
         "aqi": 5, "agg_window": agg, "source": source,
     }]))
 
@@ -28,7 +27,7 @@ class FakeProvider:
         cands = [c for c in self.supported_cadences if c <= requested]
         return max(cands) if cands else min(self.supported_cadences)
 
-    def fetch(self, county_fips, start, end, pollutants, cadence):
+    def fetch(self, county_fips, start, end, metrics, cadence):
         self.requested_ranges.append((start, end))
         day = start
         while day <= end:
@@ -40,7 +39,7 @@ def test_hybrid_skips_covered_and_fetches_gaps(tmp_path):
     store.write(tmp_path, "06037", _frame("06037", date(2026, 6, 16)))
     p = FakeProvider()
     fetcher.fetch_county(tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 18),
-                         [Pollutant.PM2_5], 10, [p], today=date(2026, 6, 20))
+                         [Metric.PM2_5], 10, [p], today=date(2026, 6, 20))
     fetched_days = {d for (s, e) in p.requested_ranges
                     for d in pd.date_range(s, e, freq="D").date}
     assert date(2026, 6, 16) not in fetched_days
@@ -52,7 +51,7 @@ def test_always_refetches_today(tmp_path):
     store.write(tmp_path, "06037", _frame("06037", date(2026, 6, 20)))
     p = FakeProvider()
     fetcher.fetch_county(tmp_path, "06037", date(2026, 6, 20), date(2026, 6, 20),
-                         [Pollutant.PM2_5], 10, [p], today=date(2026, 6, 20))
+                         [Metric.PM2_5], 10, [p], today=date(2026, 6, 20))
     assert p.requested_ranges
 
 
@@ -60,7 +59,7 @@ def test_refetch_fetches_everything(tmp_path):
     store.write(tmp_path, "06037", _frame("06037", date(2026, 6, 16)))
     p = FakeProvider()
     fetcher.fetch_county(tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 17),
-                         [Pollutant.PM2_5], 10, [p],
+                         [Metric.PM2_5], 10, [p],
                          today=date(2026, 6, 30), refetch=True)
     fetched_days = {d for (s, e) in p.requested_ranges
                     for d in pd.date_range(s, e, freq="D").date}
@@ -76,7 +75,7 @@ def test_writes_once_on_success(tmp_path, monkeypatch):
     )
     p = FakeProvider()
     fetcher.fetch_county(tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 17),
-                         [Pollutant.PM2_5], 10, [p], today=date(2026, 6, 30))
+                         [Metric.PM2_5], 10, [p], today=date(2026, 6, 30))
     assert calls["n"] == 1  # single flush write for the county
 
 
@@ -90,7 +89,7 @@ class _YieldThenFail:
     def resolve_cadence(self, requested):
         return 10
 
-    def fetch(self, county_fips, start, end, pollutants, cadence):
+    def fetch(self, county_fips, start, end, metrics, cadence):
         yield _frame(county_fips, date(2026, 6, 16))
         yield _frame(county_fips, date(2026, 6, 17))
         raise self._exc
@@ -100,7 +99,7 @@ def test_flush_on_exception(tmp_path):
     p = _YieldThenFail(RuntimeError("boom"))
     with pytest.raises(RuntimeError):
         fetcher.fetch_county(tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 17),
-                             [Pollutant.PM2_5], 10, [p], today=date(2026, 6, 30))
+                             [Metric.PM2_5], 10, [p], today=date(2026, 6, 30))
     cov = store.coverage(tmp_path, "06037")
     assert (date(2026, 6, 16), "purpleair") in cov
     assert (date(2026, 6, 17), "purpleair") in cov
@@ -110,7 +109,7 @@ def test_flush_on_keyboard_interrupt(tmp_path):
     p = _YieldThenFail(KeyboardInterrupt())
     with pytest.raises(KeyboardInterrupt):
         fetcher.fetch_county(tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 17),
-                             [Pollutant.PM2_5], 10, [p], today=date(2026, 6, 30))
+                             [Metric.PM2_5], 10, [p], today=date(2026, 6, 30))
     cov = store.coverage(tmp_path, "06037")
     assert (date(2026, 6, 16), "purpleair") in cov
     assert (date(2026, 6, 17), "purpleair") in cov

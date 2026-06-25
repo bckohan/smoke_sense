@@ -1,0 +1,47 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-25-all-metrics.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Metric enum (enum-properties) + dep",
+      "status": "completed",
+      "description": "**Goal:** Provider-agnostic Metric enum (enum-properties): unit, has_aqi, symmetric lookup; add enum-properties dep.\n\n**Files:** pyproject.toml, src/smoke_sense/data.py, tests/test_metric.py\n\n**Verify:** `uv run pytest tests/test_metric.py -v`\n\n```json:metadata\n{\"files\": [\"pyproject.toml\", \"src/smoke_sense/data.py\", \"tests/test_metric.py\"], \"verifyCommand\": \"uv run pytest tests/test_metric.py -v\", \"acceptanceCriteria\": [\"Metric unit/has_aqi\", \"symmetric lookup\", \"AQI_METRICS == has_aqi members\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Schema metric/no-unit/no-latlon + zstd; aqi on Metric",
+      "status": "completed",
+      "blockedBy": [0],
+      "description": "**Goal:** Switch schema to metric (drop unit/lat-lon), zstd; rekey aqi on Metric; update producers/fixtures (incl bin/fetch.py) so suite green.\n\n**Files:** data.py, aqi.py, store.py, summary.py, providers/aqs.py, providers/purpleair.py, fetcher.py, bin/fetch.py, tests/\n\n**Verify:** `uv run pytest -q`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/data.py\", \"src/smoke_sense/aqi.py\", \"src/smoke_sense/store.py\", \"src/smoke_sense/summary.py\", \"src/smoke_sense/providers/aqs.py\", \"src/smoke_sense/providers/purpleair.py\", \"src/smoke_sense/fetcher.py\", \"src/smoke_sense/bin/fetch.py\", \"tests/\"], \"verifyCommand\": \"uv run pytest -q\", \"acceptanceCriteria\": [\"COLUMNS metric/no-unit/no-latlon\", \"write_parquet zstd\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Station-metadata table (store.py)",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** Split lat/lon into {fips}/stations.parquet on write; day files no coords.\n\n**Files:** store.py, tests/test_store.py\n\n**Verify:** `uv run pytest tests/test_store.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/store.py\", \"tests/test_store.py\"], \"verifyCommand\": \"uv run pytest tests/test_store.py -v\", \"acceptanceCriteria\": [\"stations.parquet deduped\", \"day files no lat/lon\", \"read_range/coverage unaffected\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: AQS all-metrics + 5-param batching + unit conversion",
+      "status": "completed",
+      "blockedBy": [2],
+      "description": "**Goal:** AQS criteria+met metrics; batch <=5/request; unit conversion; aqi only AQI metrics. Verify AQS met codes/units.\n\n**Files:** providers/base.py, providers/aqs.py, tests/test_providers_aqs.py\n\n**Verify:** `uv run pytest tests/test_providers_aqs.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/base.py\", \"src/smoke_sense/providers/aqs.py\", \"tests/test_providers_aqs.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_aqs.py -v\", \"acceptanceCriteria\": [\"supported_metrics criteria+met\", \"fetch batches <=5\", \"_parse codes->Metric + unit convert + aqi gating\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: PurpleAir all-metrics + melt + conversion + corrected PM2.5",
+      "status": "completed",
+      "blockedBy": [3],
+      "description": "**Goal:** PurpleAir all fields; melt wide->long; convert units; corrected PM2.5 + raw cf_1/atm variants; aqi only AQI metrics.\n\n**Files:** providers/purpleair.py, tests/test_providers_purpleair.py\n\n**Verify:** `uv run pytest tests/test_providers_purpleair.py -v`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/purpleair.py\", \"tests/test_providers_purpleair.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_purpleair.py -v\", \"acceptanceCriteria\": [\"supported_metrics PM variants+met\", \"melt+convert; corrected+raw PM2.5\", \"aqi only AQI metrics\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: CLI default-all-metrics + migration script",
+      "status": "completed",
+      "blockedBy": [4],
+      "description": "**Goal:** --metric (default all) via fetcher; migration script converts existing day files to new schema + stations.parquet.\n\n**Files:** fetcher.py, bin/fetch.py, tests/test_fetch_cli.py; Create scripts/migrate_store.py, tests/test_migrate_store.py\n\n**Verify:** `uv run pytest tests/test_fetch_cli.py tests/test_migrate_store.py -v` then `uv run pytest -q`\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/fetcher.py\", \"src/smoke_sense/bin/fetch.py\", \"tests/test_fetch_cli.py\", \"scripts/migrate_store.py\", \"tests/test_migrate_store.py\"], \"verifyCommand\": \"uv run pytest tests/test_fetch_cli.py tests/test_migrate_store.py -v\", \"acceptanceCriteria\": [\"default all metrics; --metric filters\", \"fetcher threads metrics\", \"migrate converts old->new + stations\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-25"
+}

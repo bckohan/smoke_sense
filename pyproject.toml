@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12.0"
 dependencies = [
     "cryptography>=49.0.0",
+    "enum-properties>=2.7.0",
     "pandas>=3.0.3",
     "pyarrow>=24.0.0",
     "requests>=2.34.2",

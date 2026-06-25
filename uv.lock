@@ -218,6 +218,15 @@ wheels = [
 ]
 
 [[package]]
+name = "enum-properties"
+version = "2.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/d0/f6c9326e21649185d56976170cfd12c1fe4ae4bd116ada15a777511d5551/enum_properties-2.7.0.tar.gz", hash = "sha256:560d7339fc071aefa5d14862d2f00dacf2209b3f1db5cb009132fa31b47db797", size = 178973, upload-time = "2026-03-05T08:26:28.322Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/56/a9c4a92a82dd32c4993f96e5716860bf080aca43ed913456c5d8cddad92f/enum_properties-2.7.0-py3-none-any.whl", hash = "sha256:ee75853b6b8546993168478856670f7417c3dc0dbe06984049b03a750b4f4091", size = 15969, upload-time = "2026-03-05T08:26:26.952Z" },
+]
+
+[[package]]
 name = "idna"
 version = "3.18"
 source = { registry = "https://pypi.org/simple" }
@@ -518,6 +527,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
+    { name = "enum-properties" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "requests" },
@@ -532,6 +542,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=49.0.0" },
+    { name = "enum-properties", specifier = ">=2.7.0" },
     { name = "pandas", specifier = ">=3.0.3" },
     { name = "pyarrow", specifier = ">=24.0.0" },
     { name = "requests", specifier = ">=2.34.2" },

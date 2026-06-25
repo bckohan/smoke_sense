@@ -11,7 +11,7 @@ import pandas as pd
 import requests
 
 from ..aqi import compute_aqi
-from ..data import Pollutant, empty_frame
+from ..data import AQI_METRICS, Metric, empty_frame
 from ..geo import bbox_for_county, county_polygon, point_in_polygon
 from .base import AQIProvider, register
 
@@ -24,11 +24,29 @@ def epa_correct_pm25(pa_cf1: float, humidity: float) -> float:
     return 0.524 * pa_cf1 - 0.0862 * humidity + 5.75
 
 
-# PurpleAir history field name -> (Pollutant, needs_correction)
-_FIELD_MAP = {
-    "pm2.5_cf_1": (Pollutant.PM2_5, True),
-    "pm10.0_cf_1": (Pollutant.PM10, False),
+# Metric -> PurpleAir history field (raw passthrough unless converted)
+_FIELD_MAP: dict[Metric, str] = {
+    Metric.PM2_5_CF1: "pm2.5_cf_1",
+    Metric.PM2_5_ATM: "pm2.5_atm",
+    Metric.PM10:      "pm10.0_cf_1",   # canonical PM10 (uncorrected)
+    Metric.PM10_CF1:  "pm10.0_cf_1",
+    Metric.PM10_ATM:  "pm10.0_atm",
+    Metric.PM1_0_CF1: "pm1.0_cf_1",
+    Metric.PM1_0_ATM: "pm1.0_atm",
+    Metric.TEMP:      "temperature",   # °F -> °C
+    Metric.RH:        "humidity",      # %
+    Metric.PRESSURE:  "pressure",      # millibars == hPa
+    Metric.VOC:       "voc",           # iaq
 }
+# PM2.5 (corrected) is derived from pm2.5_cf_1 + humidity, handled specially.
+_CORRECTED_PM25 = Metric.PM2_5
+
+
+def _to_canonical(metric: Metric, values):
+    if metric is Metric.TEMP:        # °F -> °C
+        return (values - 32.0) * 5.0 / 9.0
+    return values
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +54,7 @@ logger = logging.getLogger(__name__)
 @register
 class PurpleAirProvider(AQIProvider):
     name = "purpleair"
-    supported = {Pollutant.PM2_5, Pollutant.PM10}
+    supported_metrics = set(_FIELD_MAP) | {_CORRECTED_PM25}
     supported_cadences = [0, 10, 30, 60, 360, 1440]
 
     def __init__(self, purpleair_key: str | None = None,
@@ -173,51 +191,53 @@ class PurpleAirProvider(AQIProvider):
                 return left_data + right_data, left_fields or right_fields
             raise
 
-    def _parse_history(self, payload, sensor_id, lat, lon, county_fips, pollutants,
-                       agg: int = 60):
+    def _parse_history(self, payload, sensor_id, lat, lon, county_fips, wanted, agg):
         fields = payload["fields"]
         rows = payload["data"]
         if not rows:
             return empty_frame()
         raw = pd.DataFrame(rows, columns=fields)
+        ts = pd.to_datetime(raw["time_stamp"], unit="s", utc=True)
         humidity = raw.get("humidity")
+        parts = []
 
-        frames = []
-        for field, (pollutant, needs_correction) in _FIELD_MAP.items():
-            if pollutant not in pollutants or field not in raw.columns:
-                continue
-            values = raw[field].astype("float64")
-            if needs_correction:
-                values = epa_correct_pm25(values, humidity.astype("float64"))
-            part = pd.DataFrame(
-                {
-                    "timestamp": pd.to_datetime(raw["time_stamp"], unit="s", utc=True),
-                    "county_fips": county_fips,
-                    "station_id": str(sensor_id),
-                    "latitude": float(lat),
-                    "longitude": float(lon),
-                    "pollutant": pollutant.value,
-                    "value": values,
-                    "unit": pollutant.unit,
-                    "aqi": pd.NA,
-                    "agg_window": agg,
-                    "source": "purpleair",
-                }
-            ).dropna(subset=["value"]).sort_values("timestamp")
-            series = part.set_index("timestamp")["value"]
-            part["aqi"] = compute_aqi(series, pollutant).to_numpy()
-            frames.append(part)
+        def _emit(metric: Metric, values):
+            part = pd.DataFrame({
+                "timestamp": ts,
+                "county_fips": county_fips,
+                "station_id": str(sensor_id),
+                "latitude": float(lat),
+                "longitude": float(lon),
+                "metric": metric.value,
+                "value": _to_canonical(metric, values.astype("float64")),
+                "aqi": pd.NA,
+                "agg_window": agg,
+                "source": "purpleair",
+            }).dropna(subset=["value"]).sort_values("timestamp")
+            if metric in AQI_METRICS and not part.empty:
+                series = part.set_index("timestamp")["value"]
+                part["aqi"] = compute_aqi(series, metric).to_numpy()
+            parts.append(part)
 
-        return pd.concat(frames, ignore_index=True) if frames else empty_frame()
+        for metric in wanted:
+            if metric is _CORRECTED_PM25:
+                if "pm2.5_cf_1" in raw.columns and humidity is not None:
+                    corrected = epa_correct_pm25(
+                        raw["pm2.5_cf_1"].astype("float64"),
+                        humidity.astype("float64"))
+                    _emit(metric, corrected)
+            else:
+                field = _FIELD_MAP.get(metric)
+                if field and field in raw.columns:
+                    _emit(metric, raw[field])
 
-    def fetch(self, county_fips, start, end, pollutants, cadence: int = 60):
-        wanted = [p for p in pollutants if p in self.supported]
-        for p in pollutants:
-            if p not in self.supported:
-                warnings.warn(f"{self.name}: pollutant {p.value} not supported, skipping")
+        nonempty = [p for p in parts if not p.empty]
+        return pd.concat(nonempty, ignore_index=True) if nonempty else empty_frame()
+
+    def fetch(self, county_fips, start, end, metrics, cadence: int = 60):
+        wanted = [m for m in metrics if m in self.supported_metrics]
         if not wanted:
             return
-
         average = self.resolve_cadence(cadence)
         bbox = bbox_for_county(county_fips)
         sensors = self._list_sensors(bbox)
@@ -225,18 +245,16 @@ class PurpleAirProvider(AQIProvider):
         sensors = self._filter_sensors(sensors, geometry, start, end)
         if not sensors:
             return
-        # PurpleAir returns time_stamp automatically; do not request it.
-        fields = ["humidity"] + [
-            f for f, (p, _) in _FIELD_MAP.items() if p in wanted
-        ]
+        fields = {_FIELD_MAP[m] for m in wanted if m in _FIELD_MAP}
+        if _CORRECTED_PM25 in wanted:
+            fields |= {"pm2.5_cf_1", "humidity"}  # humidity needed for the EPA correction
+        field_list = sorted(fields)
         for sensor in sensors:
             rows, resp_fields = self._history_chunked(
-                sensor["sensor_index"], start, end, average, fields)
+                sensor["sensor_index"], start, end, average, field_list)
             chunk = self._parse_history(
                 {"fields": resp_fields, "data": rows},
-                sensor["sensor_index"],
-                sensor["latitude"], sensor["longitude"],
-                county_fips, wanted, average,
-            )
+                sensor["sensor_index"], sensor["latitude"], sensor["longitude"],
+                county_fips, wanted, average)
             if not chunk.empty:
                 yield chunk

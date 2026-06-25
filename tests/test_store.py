@@ -3,22 +3,21 @@ from datetime import date
 import pandas as pd
 
 from smoke_sense import data, store
-from smoke_sense.data import Pollutant
+from smoke_sense.data import Metric
 
 
-def _row(ts, value, agg, source="purpleair", station="s1"):
+def _row(ts, value, agg, source="purpleair", station="s1", lat=34.0, lon=-118.2):
     return {
         "timestamp": pd.Timestamp(ts, tz="UTC"),
         "county_fips": "06037",
         "station_id": station,
-        "latitude": 34.0,
-        "longitude": -118.2,
-        "pollutant": Pollutant.PM2_5.value,
+        "metric": Metric.PM2_5.value,
         "value": value,
-        "unit": "µg/m³",
         "aqi": 10,
         "agg_window": agg,
         "source": source,
+        "latitude": lat,
+        "longitude": lon,
     }
 
 
@@ -79,3 +78,17 @@ def test_read_range_empty_when_county_absent(tmp_path):
     df = store.read_range(tmp_path, "99999", date(2026, 6, 1), date(2026, 6, 2))
     assert df.empty
     assert list(df.columns) == list(data.COLUMNS)
+
+
+def test_write_splits_station_metadata(tmp_path):
+    df = pd.DataFrame([
+        _row("2026-06-16T01:00:00", 1.0, 10, station="s1", lat=34.0, lon=-118.2),
+        _row("2026-06-16T02:00:00", 2.0, 10, station="s1", lat=34.0, lon=-118.2),
+        _row("2026-06-16T03:00:00", 3.0, 10, station="s2", lat=33.9, lon=-118.1),
+    ])
+    store.write(tmp_path, "06037", df)
+    stations = pd.read_parquet(store.stations_path(tmp_path, "06037"))
+    assert set(stations["station_id"]) == {"s1", "s2"}
+    assert {"station_id", "source", "latitude", "longitude"} <= set(stations.columns)
+    day = pd.read_parquet(tmp_path / "06037" / "2026-06-16.parquet")
+    assert "latitude" not in day.columns and "longitude" not in day.columns

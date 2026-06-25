@@ -13,7 +13,7 @@ from datetime import date
 import pandas as pd
 
 from ..cadence import resolve_cadence
-from ..data import Pollutant
+from ..data import Metric
 
 _REGISTRY: dict[str, type["AQIProvider"]] = {}
 
@@ -22,7 +22,7 @@ class AQIProvider(ABC):
     """Base class for air-quality data providers."""
 
     name: str
-    supported: set[Pollutant]
+    supported_metrics: set[Metric]
     supported_cadences: list[int]
 
     def __init__(self, **kwargs) -> None:
@@ -39,10 +39,10 @@ class AQIProvider(ABC):
         county_fips: str,
         start: date,
         end: date,
-        pollutants: list[Pollutant],
+        metrics: list[Metric],
         cadence: int = 60,
     ) -> Iterator[pd.DataFrame]:
-        """Yield `data`-schema DataFrame chunks for the county/range/pollutants."""
+        """Yield `data`-schema DataFrame chunks for the county/range/metrics."""
         raise NotImplementedError
 
 

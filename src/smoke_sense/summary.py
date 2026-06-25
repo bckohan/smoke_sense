@@ -1,4 +1,4 @@
-"""Summarize stored AQI data: coverage, breakdown, and per-pollutant stats.
+"""Summarize stored AQI data: coverage, breakdown, and per-metric stats.
 
 Pure aggregation over a `data`-schema DataFrame. No I/O or CLI coupling.
 """
@@ -31,7 +31,7 @@ def summarize(df: pd.DataFrame, start: date, end: date) -> dict:
                 "total_rows": 0,
             },
             "breakdown": [],
-            "pollutants": [],
+            "metrics": [],
         }
 
     present = set(df["timestamp"].dt.tz_convert("UTC").dt.date)
@@ -45,19 +45,19 @@ def summarize(df: pd.DataFrame, start: date, end: date) -> dict:
     }
 
     breakdown = [
-        {"source": str(source), "pollutant": str(pollutant),
+        {"source": str(source), "metric": str(metric),
          "agg_window": int(agg), "rows": int(rows)}
-        for (source, pollutant, agg), rows in
-        df.groupby(["source", "pollutant", "agg_window"], observed=True).size().items()
+        for (source, metric, agg), rows in
+        df.groupby(["source", "metric", "agg_window"], observed=True).size().items()
     ]
-    breakdown.sort(key=lambda r: (r["source"], r["pollutant"], r["agg_window"]))
+    breakdown.sort(key=lambda r: (r["source"], r["metric"], r["agg_window"]))
 
-    pollutants = []
-    for pollutant, group in df.groupby("pollutant", observed=True):
+    metrics = []
+    for metric, group in df.groupby("metric", observed=True):
         values = group["value"]
         aqi = group["aqi"].dropna()
-        pollutants.append({
-            "pollutant": str(pollutant),
+        metrics.append({
+            "metric": str(metric),
             "stations": int(group["station_id"].nunique()),
             "sources": sorted({str(s) for s in group["source"].unique()}),
             "value": {
@@ -74,7 +74,7 @@ def summarize(df: pd.DataFrame, start: date, end: date) -> dict:
                 "max": int(aqi.max()),
             },
         })
-    pollutants.sort(key=lambda r: r["pollutant"])
+    metrics.sort(key=lambda r: r["metric"])
 
     return {"range": rng, "coverage": coverage,
-            "breakdown": breakdown, "pollutants": pollutants}
+            "breakdown": breakdown, "metrics": metrics}

@@ -17,13 +17,11 @@ from rich.logging import RichHandler
 from .. import credentials as credentials_core
 from .. import fetcher
 from ..cadence import Cadence
-from ..data import Pollutant
+from ..data import Metric
 from ..providers import all_providers, get_provider
 from .credentials import resolve_password
 
 console = Console()
-
-DEFAULT_POLLUTANTS = [Pollutant.PM2_5, Pollutant.PM10, Pollutant.O3]
 
 
 def _resolve_providers(sources: list[str], creds: dict):
@@ -54,7 +52,7 @@ def fetch(
     cadence: Cadence = typer.Option(Cadence.TEN_MIN, help="Averaging window"),
     refetch: bool = typer.Option(False, help="Re-fetch days already stored"),
     source: Optional[List[str]] = typer.Option(None, help="Provider(s); default: all"),
-    pollutant: Optional[List[str]] = typer.Option(None, help="Pollutant(s); default: PM2.5,PM10,O3"),
+    metric: Optional[List[str]] = typer.Option(None, "--metric", help="Metric(s); default: all available"),
     output: Path = typer.Option(Path("./data"), help="Data directory"),
     credentials: Path = typer.Option(
         Path("./credentials.json"), "--credentials", help="Encrypted credentials file"
@@ -74,9 +72,10 @@ def fetch(
     end_date = end.date() if end else date.today()
 
     sources = source or all_providers()
-    pollutants = (
-        [Pollutant.from_str(p) for p in pollutant] if pollutant else DEFAULT_POLLUTANTS
-    )
+    try:
+        metrics = [Metric(m) for m in metric] if metric else list(Metric)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     try:
         creds = credentials_core.resolve(
             {"email": email, "api_key": api_key, "purpleair_key": purpleair_key},
@@ -93,7 +92,7 @@ def fetch(
     for fips in county_fips:
         console.print(f"[cyan]Fetching[/] {fips} ({cadence.value}) …")
         fetcher.fetch_county(
-            output, fips, start_date, end_date, pollutants, cadence.minutes,
+            output, fips, start_date, end_date, metrics, cadence.minutes,
             providers, today=date.today(), refetch=refetch,
         )
         console.print(f"[green]Updated[/] {output}/{fips}")

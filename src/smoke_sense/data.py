@@ -1,63 +1,65 @@
 """Common tidy data format for air-quality observations.
 
-One row per (timestamp, station, pollutant) observation. This schema is the
+One row per (timestamp, station, metric) observation. This schema is the
 contract every provider produces and every downstream consumer reads.
 """
 
-from __future__ import annotations
-
-from enum import Enum
 from pathlib import Path
+from typing import Annotated
 
 import pandas as pd
+from enum_properties import StrEnumProperties, Symmetric
+
+# NOTE: ``from __future__ import annotations`` (PEP 563) is intentionally NOT
+# used here. enum-properties reads the ``Annotated[..., Symmetric(...)]``
+# directives from ``__annotations__`` at class-creation time; PEP 563 would
+# turn those into strings and silently drop the Symmetric markers, breaking the
+# case-insensitive lookup. All annotations in this module use native 3.10+
+# syntax, so the future import is unnecessary.
 
 
-class Pollutant(str, Enum):
-    """Smoke-relevant pollutants with their AQS parameter codes and units."""
+class Metric(StrEnumProperties):
+    """A measured quantity with its canonical unit and AQI eligibility.
 
-    PM2_5 = "PM2.5"
-    PM10 = "PM10"
-    O3 = "O3"
+    Provider-specific codes/fields live on the providers, not here.
+    """
 
-    @property
-    def aqs_code(self) -> str:
-        return _AQS_CODES[self]
+    label: Annotated[str, Symmetric(case_fold=True)]
+    unit: str
+    has_aqi: bool
 
-    @property
-    def unit(self) -> str:
-        return _UNITS[self]
+    #          value          label          unit      has_aqi
+    PM2_5      = "PM2.5",     "PM2.5",     "µg/m³",  True
+    PM2_5_CF1  = "PM2.5_CF1", "PM2.5_CF1", "µg/m³",  False
+    PM2_5_ATM  = "PM2.5_ATM", "PM2.5_ATM", "µg/m³",  False
+    PM10       = "PM10",      "PM10",      "µg/m³",  True
+    PM10_CF1   = "PM10_CF1",  "PM10_CF1",  "µg/m³",  False
+    PM10_ATM   = "PM10_ATM",  "PM10_ATM",  "µg/m³",  False
+    PM1_0_CF1  = "PM1.0_CF1", "PM1.0_CF1", "µg/m³",  False
+    PM1_0_ATM  = "PM1.0_ATM", "PM1.0_ATM", "µg/m³",  False
+    O3         = "O3",        "O3",        "ppm",    True
+    CO         = "CO",        "CO",        "ppm",    False
+    SO2        = "SO2",       "SO2",       "ppb",    False
+    NO2        = "NO2",       "NO2",       "ppb",    False
+    PB         = "Pb",        "Pb",        "µg/m³",  False
+    TEMP       = "temperature", "temperature", "°C", False
+    RH         = "humidity",    "humidity",    "%",  False
+    PRESSURE   = "pressure",    "pressure",    "hPa", False
+    WIND_SPEED = "wind_speed",  "wind_speed",  "m/s", False
+    WIND_DIR   = "wind_dir",    "wind_dir",    "deg", False
+    VOC        = "VOC",        "VOC",        "iaq",  False
 
-    @classmethod
-    def from_str(cls, value: str) -> "Pollutant":
-        key = value.strip().upper().replace("PM2_5", "PM2.5")
-        for member in cls:
-            if member.value.upper() == key:
-                return member
-        raise ValueError(f"unknown pollutant: {value!r}")
 
+AQI_METRICS: frozenset[Metric] = frozenset(m for m in Metric if m.has_aqi)
 
-_AQS_CODES: dict[Pollutant, str] = {
-    Pollutant.PM2_5: "88101",
-    Pollutant.PM10: "81102",
-    Pollutant.O3: "44201",
-}
-
-_UNITS: dict[Pollutant, str] = {
-    Pollutant.PM2_5: "µg/m³",
-    Pollutant.PM10: "µg/m³",
-    Pollutant.O3: "ppm",
-}
 
 # Canonical column -> pandas dtype. Single source of truth for the schema.
 COLUMNS: dict[str, str] = {
     "timestamp": "datetime64[ns, UTC]",
     "county_fips": "string",
     "station_id": "string",
-    "latitude": "float64",
-    "longitude": "float64",
-    "pollutant": "category",
+    "metric": "category",
     "value": "float64",
-    "unit": "category",
     "aqi": "Int16",
     "agg_window": "Int16",
     "source": "category",
@@ -68,7 +70,7 @@ REQUIRED_NON_NULL: list[str] = [
     "timestamp",
     "county_fips",
     "station_id",
-    "pollutant",
+    "metric",
     "value",
     "agg_window",
     "source",
@@ -110,10 +112,10 @@ def validate(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def write_parquet(df: pd.DataFrame, path: str | Path) -> None:
-    """Validate and persist a frame to Parquet, creating parent dirs."""
+    """Validate and persist a frame to Parquet (zstd), creating parent dirs."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    validate(df).to_parquet(path, index=False)
+    validate(df).to_parquet(path, index=False, compression="zstd")
 
 
 def read_parquet(path: str | Path) -> pd.DataFrame:

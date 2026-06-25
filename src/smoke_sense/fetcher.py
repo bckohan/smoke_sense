@@ -46,7 +46,7 @@ def _flush(data_dir, fips, buffer: list[pd.DataFrame]) -> None:
         buffer.clear()
 
 
-def fetch_county(data_dir, fips, start, end, pollutants, requested_cadence,
+def fetch_county(data_dir, fips, start, end, metrics, requested_cadence,
                  providers, today, refetch=False) -> None:
     """Stream provider chunks into a per-county buffer; write once at the end.
 
@@ -67,7 +67,7 @@ def fetch_county(data_dir, fips, start, end, pollutants, requested_cadence,
                     or cov.get((d, provider.name), 10 ** 9) > actual
                 ]
             for run_start, run_end in _contiguous_ranges(missing):
-                for chunk in provider.fetch(fips, run_start, run_end, pollutants, actual):
+                for chunk in provider.fetch(fips, run_start, run_end, metrics, actual):
                     buffer.append(chunk)
     except BaseException:
         _flush(data_dir, fips, buffer)
