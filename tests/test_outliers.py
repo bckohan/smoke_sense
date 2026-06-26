@@ -97,3 +97,52 @@ def test_filter_outliers_empty():
     clean, report = outliers.filter_outliers(df)
     assert clean.empty
     assert report.total == 0 and report.per_metric == {}
+
+
+def test_station_mask_flags_excluded():
+    df = _df([
+        ("s1", Metric.PM2_5, 10.0),
+        ("s2", Metric.PM2_5, 11.0),
+        ("s3", Metric.PM2_5, 12.0),
+    ])
+    mask = outliers.station_mask(df, frozenset({"s2", "s3"}))
+    assert mask.tolist() == [False, True, True]
+
+
+def test_station_mask_empty_set():
+    df = _df([("s1", Metric.PM2_5, 10.0)])
+    assert outliers.station_mask(df, frozenset()).tolist() == [False]
+
+
+def test_station_mask_empty_frame():
+    df = _df([]).iloc[0:0]
+    mask = outliers.station_mask(df, frozenset({"s1"}))
+    assert mask.tolist() == []
+
+
+def test_filter_outliers_excludes_station():
+    df = _df([
+        ("s1", Metric.PM2_5, 10.0),
+        ("s1", Metric.PM2_5, 11.0),
+        ("s2", Metric.PM2_5, 12.0),   # excluded
+    ])
+    cfg = outliers.OutlierConfig(exclude_stations=frozenset({"s2"}))
+    clean, report = outliers.filter_outliers(df, cfg)
+    assert set(clean["station_id"]) == {"s1"}
+    assert report.per_check["station"] == 1
+    assert report.per_metric["PM2.5"] == 1
+    assert report.total == 1
+
+
+def test_filter_outliers_station_counts_once_for_range_outlier():
+    # s2's row is BOTH excluded and out-of-range; it must count once, under station.
+    df = _df([
+        ("s1", Metric.PM2_5, 10.0),
+        ("s2", Metric.PM2_5, 5000.0),   # excluded AND > 1000 bound
+    ])
+    cfg = outliers.OutlierConfig(exclude_stations=frozenset({"s2"}))
+    clean, report = outliers.filter_outliers(df, cfg)
+    assert set(clean["station_id"]) == {"s1"}
+    assert report.total == 1
+    assert report.per_check["station"] == 1
+    assert report.per_check.get("range", 0) == 0

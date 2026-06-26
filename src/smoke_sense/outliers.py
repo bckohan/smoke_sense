@@ -52,6 +52,7 @@ class OutlierConfig:
     zscore: float | None = 3.5           # per-station modified-z threshold; None disables
     iqr: float | None = None             # per-station IQR multiplier; None disables
     min_group: int = 5                   # skip stat checks for smaller groups
+    exclude_stations: frozenset[str] = frozenset()   # drop these station IDs wholesale
 
 
 DEFAULT_CONFIG = OutlierConfig()
@@ -78,6 +79,17 @@ def range_mask(df: pd.DataFrame,
     high = metric_str.map({m.value: b[1] for m, b in bounds.items()}).astype(float)
     out = (df["value"] < low) | (df["value"] > high)
     return out.fillna(False)
+
+
+def station_mask(df: pd.DataFrame,
+                 exclude_stations: frozenset[str]) -> pd.Series:
+    """True where `station_id` is in the user-given exclusion set.
+
+    An empty set (the default) or empty frame drops nothing.
+    """
+    if df.empty or not exclude_stations:
+        return pd.Series(False, index=df.index)
+    return df["station_id"].isin(exclude_stations)
 
 
 def _grouped(df: pd.DataFrame):
@@ -131,6 +143,8 @@ def filter_outliers(df: pd.DataFrame,
         return df.copy(), OutlierReport()
 
     checks: list[tuple[str, pd.Series]] = []
+    if config.exclude_stations:
+        checks.append(("station", station_mask(df, config.exclude_stations)))
     if config.range_enabled:
         checks.append(("range", range_mask(df, config.bounds)))
     if config.zscore is not None and config.zscore > 0:
