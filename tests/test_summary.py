@@ -127,6 +127,23 @@ def test_summary_cli_no_filter_keeps_garbage(tmp_path):
     assert pm["value"]["min"] == -999.0
 
 
+def test_summary_cli_excludes_station(tmp_path):
+    rows = [
+        _cli_row("2026-06-16T01:00:00", Metric.PM2_5, 10.0, "s1"),
+        _cli_row("2026-06-16T02:00:00", Metric.PM2_5, 11.0, "s1"),
+        _cli_row("2026-06-16T01:00:00", Metric.PM2_5, 12.0, "s2"),
+    ]
+    store.write(tmp_path, "06037", pd.DataFrame(rows))
+    result = runner.invoke(app, [
+        "summary", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+        "--output", str(tmp_path), "--json", "--exclude-station", "s2"])
+    assert result.exit_code == 0, result.output
+    pm = next(m for m in json.loads(result.output)["06037"]["metrics"]
+              if m["metric"] == "PM2.5")
+    assert pm["stations"] == 1     # only s1 remains
+    assert pm["filtered"] == 1     # s2's row counted as filtered
+
+
 def test_summary_cli_fully_removed_metric_absent(tmp_path):
     """When ALL rows of a metric are dropped by the outlier filter, that metric
     must have NO entry in the summary ``metrics`` list (documented contract)."""

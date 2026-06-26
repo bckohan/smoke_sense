@@ -89,6 +89,9 @@ def summary(
         False, "--no-outlier-range", help="Disable the physical-bounds check"),
     outlier_bound: Optional[List[str]] = typer.Option(
         None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
+    exclude_station: Optional[List[str]] = typer.Option(
+        None, "--exclude-station",
+        help="Drop all rows from this station ID (repeatable)"),
 ) -> None:
     """Summarize stored AQI data for the given counties and time range."""
     for fips in county_fips:
@@ -104,7 +107,7 @@ def summary(
         clean, report = _outlier_cli.filter_frame(
             raw, enabled=outlier_filter, no_range=no_outlier_range,
             zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
-            bound=outlier_bound)
+            bound=outlier_bound, exclude=exclude_station)
         results[fips] = summary_core.summarize(
             clean, start_date, end_date, filtered=report.per_metric)
 

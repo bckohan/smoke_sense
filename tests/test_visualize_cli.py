@@ -42,6 +42,27 @@ def _seed_rich(tmp_path):
     store.write(tmp_path, "06037", df)
 
 
+def test_exclude_station_filter_drops_rows(tmp_path):
+    from smoke_sense import visualize as viz
+    from smoke_sense.bin import _outlier_cli
+    _seed_rich(tmp_path)   # s1 (2 PM2.5 rows) + s2 (1 PM2.5 row)
+    f = _outlier_cli.make_filter(enabled=True, no_range=False, zscore=None,
+                                 iqr_on=False, iqr_k=3.0, bound=None,
+                                 exclude=["s2"])
+    obs = viz.metric_observations(tmp_path, "06037", date(2026, 6, 16),
+                                  date(2026, 6, 16), Metric.PM2_5, outlier_filter=f)
+    assert set(obs["station_id"]) == {"s1"}
+
+
+def test_series_exclude_station_cli(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "series", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--exclude-station", "s2",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+
 def test_mean_map_writes_png(tmp_path):
     _seed(tmp_path)
     out = tmp_path / "m.png"

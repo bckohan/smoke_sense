@@ -42,6 +42,9 @@ def mean_map(
         False, "--no-outlier-range", help="Disable the physical-bounds check"),
     outlier_bound: Optional[list[str]] = typer.Option(
         None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
+    exclude_station: Optional[list[str]] = typer.Option(
+        None, "--exclude-station",
+        help="Drop all rows from this station ID (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """Map each sensor as a dot colored by the mean of a metric over a period."""
@@ -60,7 +63,7 @@ def mean_map(
     ofilter = _outlier_cli.make_filter(
         enabled=outlier_filter_on, no_range=no_outlier_range,
         zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
-        bound=outlier_bound)
+        bound=outlier_bound, exclude=exclude_station)
 
     try:
         result = viz.mean_map(
@@ -161,13 +164,16 @@ def series(
         False, "--no-outlier-range", help="Disable the physical-bounds check"),
     outlier_bound: Optional[list[str]] = typer.Option(
         None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
+    exclude_station: Optional[list[str]] = typer.Option(
+        None, "--exclude-station",
+        help="Drop all rows from this station ID (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """One line per station over time."""
     ofilter = _outlier_cli.make_filter(
         enabled=outlier_filter_on, no_range=no_outlier_range,
         zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
-        bound=outlier_bound)
+        bound=outlier_bound, exclude=exclude_station)
     _render_chart("series", "render_series", county_fips, start, end, metric, by,
                   palette, output, renderer, output_dir, stations=station,
                   outlier_filter=ofilter)
@@ -196,13 +202,16 @@ def scatter(
         False, "--no-outlier-range", help="Disable the physical-bounds check"),
     outlier_bound: Optional[list[str]] = typer.Option(
         None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
+    exclude_station: Optional[list[str]] = typer.Option(
+        None, "--exclude-station",
+        help="Drop all rows from this station ID (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """All observations as points colored by station."""
     ofilter = _outlier_cli.make_filter(
         enabled=outlier_filter_on, no_range=no_outlier_range,
         zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
-        bound=outlier_bound)
+        bound=outlier_bound, exclude=exclude_station)
     _render_chart("scatter", "render_scatter", county_fips, start, end, metric, by,
                   palette, output, renderer, output_dir, outlier_filter=ofilter)
 
@@ -231,13 +240,16 @@ def aggregate(
         False, "--no-outlier-range", help="Disable the physical-bounds check"),
     outlier_bound: Optional[list[str]] = typer.Option(
         None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
+    exclude_station: Optional[list[str]] = typer.Option(
+        None, "--exclude-station",
+        help="Drop all rows from this station ID (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """Mean across stations per timestamp, optional min/max band."""
     ofilter = _outlier_cli.make_filter(
         enabled=outlier_filter_on, no_range=no_outlier_range,
         zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
-        bound=outlier_bound)
+        bound=outlier_bound, exclude=exclude_station)
     _render_chart("aggregate", "render_aggregate", county_fips, start, end, metric, by,
                   palette, output, renderer, output_dir, extra={"band": band},
                   outlier_filter=ofilter)
@@ -267,13 +279,16 @@ def histogram(
         False, "--no-outlier-range", help="Disable the physical-bounds check"),
     outlier_bound: Optional[list[str]] = typer.Option(
         None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
+    exclude_station: Optional[list[str]] = typer.Option(
+        None, "--exclude-station",
+        help="Drop all rows from this station ID (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """Distribution of the chosen quantity over all observations."""
     ofilter = _outlier_cli.make_filter(
         enabled=outlier_filter_on, no_range=no_outlier_range,
         zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
-        bound=outlier_bound)
+        bound=outlier_bound, exclude=exclude_station)
     _render_chart("histogram", "render_histogram", county_fips, start, end, metric, by,
                   palette, output, renderer, output_dir, extra={"bins": bins},
                   outlier_filter=ofilter)
