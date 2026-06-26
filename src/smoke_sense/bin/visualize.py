@@ -95,6 +95,11 @@ def _render_chart(kind: str, method_name: str, county_fips: str, start: datetime
             f"[yellow]no data for {county_fips}/{chosen.value} in "
             f"{start_date}..{end_date}[/]")
         return
+    if obs[y_column].dropna().empty:
+        console.print(
+            f"[yellow]no {by} data for {county_fips}/{chosen.value} in "
+            f"{start_date}..{end_date}[/]")
+        return
     out = output or (
         output_dir / county_fips
         / f"{chosen.value}_{by}_{start_date}_{end_date}_{kind}.png")

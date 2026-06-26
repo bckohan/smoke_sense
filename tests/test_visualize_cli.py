@@ -165,3 +165,27 @@ def test_mean_map_by_aqi(tmp_path):
         "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert list((tmp_path / "06037").glob("*_aqi_*_mean.png"))
+
+
+def test_histogram_by_aqi_all_null_no_data_message(tmp_path):
+    """When --by aqi is used but aqi column is all-NA, show no-data message, write no PNG."""
+    _seed(tmp_path)  # seeds PM2.5 rows with aqi=pd.NA
+    result = runner.invoke(app, [
+        "visualize", "histogram", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--by", "aqi",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "no" in result.output
+    assert not list((tmp_path / "06037").glob("*_aqi_*_histogram.png"))
+
+
+def test_mean_map_by_aqi_all_null_no_data_message(tmp_path):
+    """When mean-map --by aqi used but aqi is all-NA, show no-data message, write no PNG."""
+    _seed(tmp_path)  # seeds PM2.5 rows with aqi=pd.NA
+    result = runner.invoke(app, [
+        "visualize", "mean-map", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--by", "aqi", "--no-basemap",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "no" in result.output
+    assert not list((tmp_path / "06037").glob("*_aqi_*_mean.png"))

@@ -145,6 +145,17 @@ def test_y_label():
     assert visualize.y_label(Metric.PM2_5, "aqi") == "AQI"
 
 
+def test_mean_map_by_aqi_all_null_returns_none(tmp_path):
+    """mean_map returns None when aqi column is entirely NA for an AQI-eligible metric."""
+    _seed(tmp_path)  # all rows have aqi=pd.NA
+    out = tmp_path / "map.png"
+    result = visualize.mean_map(
+        tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 16), Metric.PM2_5,
+        by="aqi", palette="YlOrRd", output=out, renderer="matplotlib", basemap=False)
+    assert result is None
+    assert not out.exists()
+
+
 def test_station_means_by_aqi(tmp_path):
     df = pd.DataFrame([
         {**_row("2026-06-16T01:00:00", Metric.PM2_5, 10.0, "s1", 34.0, -118.2),

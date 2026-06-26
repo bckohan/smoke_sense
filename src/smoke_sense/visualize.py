@@ -256,7 +256,7 @@ def mean_map(data_dir, fips: str, start: date, end: date, metric: Metric, *,
              renderer: str = "matplotlib", basemap: bool = True) -> Path | None:
     """Render a per-station mean map for `metric`; return the path or None if no data."""
     points = station_means(data_dir, fips, start, end, metric, by=by)
-    if points.empty:
+    if points.empty or points["mean"].dropna().empty:
         return None
     label = f"mean {y_label(metric, by)}"
     title = f"{fips} {metric.value} ({by}) {start.isoformat()}..{end.isoformat()}"
