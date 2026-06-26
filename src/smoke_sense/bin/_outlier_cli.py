@@ -45,7 +45,8 @@ def parse_bound(spec: str) -> tuple[Metric, tuple[float, float]]:
 
 
 def build_config(*, no_range: bool, zscore: Optional[float], iqr: Optional[float],
-                 bounds: list[tuple[Metric, tuple[float, float]]]) -> OutlierConfig:
+                 bounds: list[tuple[Metric, tuple[float, float]]],
+                 exclude_stations: Optional[list[str]] = None) -> OutlierConfig:
     """Build an OutlierConfig from DEFAULT_CONFIG plus CLI overrides."""
     merged = dict(DEFAULT_BOUNDS)
     for metric, limits in bounds:
@@ -64,12 +65,15 @@ def build_config(*, no_range: bool, zscore: Optional[float], iqr: Optional[float
         # iqr has no "keep default" sentinel: its default is None and callers
         # always derive it from iqr_on/iqr_k.
         iqr=iqr,
+        exclude_stations=frozenset(exclude_stations or []),
     )
 
 
 def filter_frame(df: pd.DataFrame, *, enabled: bool, no_range: bool,
                  zscore: Optional[float], iqr_on: bool, iqr_k: float,
-                 bound: Optional[list[str]]) -> tuple[pd.DataFrame, OutlierReport]:
+                 bound: Optional[list[str]],
+                 exclude: Optional[list[str]] = None
+                 ) -> tuple[pd.DataFrame, OutlierReport]:
     """Apply the outlier filter to `df` per the CLI flags; log removals."""
     if not enabled:
         return df, OutlierReport()
@@ -80,7 +84,8 @@ def filter_frame(df: pd.DataFrame, *, enabled: bool, no_range: bool,
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
     cfg = build_config(no_range=no_range, zscore=zscore,
-                       iqr=(iqr_k if iqr_on else None), bounds=parsed)
+                       iqr=(iqr_k if iqr_on else None), bounds=parsed,
+                       exclude_stations=exclude)
     clean, report = filter_outliers(df, cfg)
     if report.total:
         logger.info("filtered %d outlier rows %s", report.total, report.per_metric)
@@ -88,12 +93,13 @@ def filter_frame(df: pd.DataFrame, *, enabled: bool, no_range: bool,
 
 
 def make_filter(*, enabled: bool, no_range: bool, zscore: Optional[float],
-                iqr_on: bool, iqr_k: float, bound: Optional[list[str]]
+                iqr_on: bool, iqr_k: float, bound: Optional[list[str]],
+                exclude: Optional[list[str]] = None
                 ) -> Callable[[pd.DataFrame], pd.DataFrame]:
     """Return a frame->clean-frame callback capturing the CLI flags."""
     def _filter(df: pd.DataFrame) -> pd.DataFrame:
         clean, _ = filter_frame(df, enabled=enabled, no_range=no_range,
                                 zscore=zscore, iqr_on=iqr_on, iqr_k=iqr_k,
-                                bound=bound)
+                                bound=bound, exclude=exclude)
         return clean
     return _filter

@@ -71,6 +71,29 @@ def test_filter_frame_bound_override_drops():
     assert out["value"].tolist() == [10.0]
 
 
+def test_build_config_exclude_stations():
+    cfg = oc.build_config(no_range=False, zscore=None, iqr=None, bounds=[],
+                          exclude_stations=["s1", "s2"])
+    assert cfg.exclude_stations == frozenset({"s1", "s2"})
+
+
+def test_build_config_exclude_default_empty():
+    cfg = oc.build_config(no_range=False, zscore=None, iqr=None, bounds=[])
+    assert cfg.exclude_stations == frozenset()
+
+
+def test_filter_frame_excludes_stations():
+    df = _df([
+        ("s1", Metric.PM2_5, 10.0),
+        ("s2", Metric.PM2_5, 11.0),
+    ])
+    clean, report = oc.filter_frame(
+        df, enabled=True, no_range=False, zscore=None, iqr_on=False,
+        iqr_k=3.0, bound=None, exclude=["s2"])
+    assert set(clean["station_id"]) == {"s1"}
+    assert report.total == 1
+
+
 def test_make_filter_returns_callable():
     df = _df([("s1", Metric.PM2_5, 10.0), ("s1", Metric.PM2_5, -5.0)])
     f = oc.make_filter(enabled=True, no_range=False, zscore=None,
