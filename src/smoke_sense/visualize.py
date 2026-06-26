@@ -10,26 +10,61 @@ from pathlib import Path
 import pandas as pd
 
 from . import store
-from .data import Metric
+from .data import AQI_METRICS, Metric
 
 logger = logging.getLogger(__name__)
 
 _MEAN_COLUMNS = ["station_id", "latitude", "longitude", "mean"]
+_OBS_COLUMNS = ["timestamp", "station_id", "value", "aqi"]
 
 
-def station_means(data_dir, fips: str, start: date, end: date,
-                  metric: Metric) -> pd.DataFrame:
-    """Per-station mean of `metric`'s value over [start, end], with coordinates.
+def resolve_by(metric: Metric, by: str) -> str:
+    """Map a --by choice to the data column; validate AQI eligibility."""
+    if by == "value":
+        return "value"
+    if by == "aqi":
+        if metric not in AQI_METRICS:
+            raise ValueError(
+                f"AQI not available for {metric.value}; "
+                "AQI only for PM2.5/PM10/O3")
+        return "aqi"
+    raise ValueError(f"invalid by={by!r}; expected 'value' or 'aqi'")
 
-    Returns columns station_id, latitude, longitude, mean. Empty (with those
-    columns) if there is no matching data or no station table.
+
+def y_label(metric: Metric, by: str) -> str:
+    """Axis/colorbar label for the chosen quantity."""
+    if by == "aqi":
+        return "AQI"
+    return f"{metric.value} ({metric.unit})"
+
+
+def metric_observations(data_dir, fips: str, start: date, end: date,
+                        metric: Metric) -> pd.DataFrame:
+    """Long observations for `metric` over [start, end].
+
+    Returns columns timestamp, station_id, value, aqi. Empty (with those
+    columns) if there is no matching data.
     """
     obs = store.read_range(data_dir, fips, start, end)
     obs = obs[obs["metric"] == metric.value]
     if obs.empty:
+        return pd.DataFrame(columns=_OBS_COLUMNS)
+    return obs[_OBS_COLUMNS].reset_index(drop=True)
+
+
+def station_means(data_dir, fips: str, start: date, end: date,
+                  metric: Metric, by: str = "value") -> pd.DataFrame:
+    """Per-station mean of `metric`'s value (or AQI) over [start, end].
+
+    Returns columns station_id, latitude, longitude, mean. Empty (with those
+    columns) if there is no matching data or no station table.
+    """
+    column = resolve_by(metric, by)
+    obs = metric_observations(data_dir, fips, start, end, metric)
+    if obs.empty:
         return pd.DataFrame(columns=_MEAN_COLUMNS)
     means = (
-        obs.groupby("station_id", observed=True)["value"].mean()
+        obs.groupby("station_id", observed=True)[column].mean()
         .rename("mean").reset_index()
     )
     path = store.stations_path(data_dir, fips)
@@ -101,15 +136,130 @@ class MatplotlibRenderer(MapRenderer):
         return output
 
 
+_CHART_RENDERERS: dict[str, type["ChartRenderer"]] = {}
+
+
+class ChartRenderer(ABC):
+    """Renders metric observations into a chart artifact."""
+
+    name: str
+
+    @abstractmethod
+    def render_series(self, obs: pd.DataFrame, *, y_column: str, y_label: str,
+                      title: str, palette: str, output) -> Path:
+        """One line per station over time; return the written path."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def render_scatter(self, obs: pd.DataFrame, *, y_column: str, y_label: str,
+                       title: str, palette: str, output) -> Path:
+        """All observations as points colored by station."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def render_aggregate(self, obs: pd.DataFrame, *, y_column: str, y_label: str,
+                         title: str, palette: str, output, band: bool = True) -> Path:
+        """Mean across stations per timestamp, optional min/max band."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def render_histogram(self, obs: pd.DataFrame, *, y_column: str, y_label: str,
+                         title: str, palette: str, output, bins: int = 30) -> Path:
+        """Distribution of the chosen quantity over all observations."""
+        raise NotImplementedError
+
+
+def register_chart_renderer(cls: type[ChartRenderer]) -> type[ChartRenderer]:
+    _CHART_RENDERERS[cls.name] = cls
+    return cls
+
+
+def get_chart_renderer(name: str) -> ChartRenderer:
+    if name not in _CHART_RENDERERS:
+        raise KeyError(
+            f"unknown chart renderer: {name!r} (have {sorted(_CHART_RENDERERS)})")
+    return _CHART_RENDERERS[name]()
+
+
+@register_chart_renderer
+class MatplotlibChartRenderer(ChartRenderer):
+    name = "matplotlib"
+
+    @staticmethod
+    def _new_axes(title: str, y_label: str):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.set_title(title)
+        ax.set_ylabel(y_label)
+        return plt, fig, ax
+
+    @staticmethod
+    def _save(plt, fig, output) -> Path:
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fig.savefig(output, dpi=150, bbox_inches="tight")
+        finally:
+            plt.close(fig)
+        return output
+
+    def render_series(self, obs, *, y_column, y_label, title, palette, output) -> Path:
+        import matplotlib
+        plt, fig, ax = self._new_axes(title, y_label)
+        ax.set_xlabel("time")
+        stations = sorted(obs["station_id"].unique())
+        cmap = matplotlib.colormaps[palette]
+        for i, sid in enumerate(stations):
+            sub = obs[obs["station_id"] == sid].sort_values("timestamp")
+            color = cmap(i / max(len(stations) - 1, 1))
+            ax.plot(sub["timestamp"], sub[y_column].astype("float64"),
+                    label=str(sid), color=color)
+        ax.legend(title="station", fontsize="small")
+        return self._save(plt, fig, output)
+
+    def render_scatter(self, obs, *, y_column, y_label, title, palette, output) -> Path:
+        plt, fig, ax = self._new_axes(title, y_label)
+        ax.set_xlabel("time")
+        codes = pd.Categorical(obs["station_id"]).codes
+        sc = ax.scatter(obs["timestamp"], obs[y_column].astype("float64"),
+                        c=codes, cmap=palette, s=12)
+        fig.colorbar(sc, ax=ax, label="station")
+        return self._save(plt, fig, output)
+
+    def render_aggregate(self, obs, *, y_column, y_label, title, palette, output,
+                         band=True) -> Path:
+        plt, fig, ax = self._new_axes(title, y_label)
+        ax.set_xlabel("time")
+        vals = obs.assign(_v=obs[y_column].astype("float64")).groupby("timestamp")["_v"]
+        mean = vals.mean()
+        ax.plot(mean.index, mean.values, label="mean")
+        if band:
+            ax.fill_between(mean.index, vals.min().values, vals.max().values,
+                            alpha=0.2, label="min-max")
+        ax.legend(fontsize="small")
+        return self._save(plt, fig, output)
+
+    def render_histogram(self, obs, *, y_column, y_label, title, palette, output,
+                         bins=30) -> Path:
+        plt, fig, ax = self._new_axes(title, y_label)
+        ax.set_xlabel(y_label)
+        ax.set_ylabel("count")
+        ax.hist(obs[y_column].astype("float64").dropna(), bins=bins)
+        return self._save(plt, fig, output)
+
+
 def mean_map(data_dir, fips: str, start: date, end: date, metric: Metric, *,
-             palette: str = "YlOrRd", output, renderer: str = "matplotlib",
-             basemap: bool = True) -> Path | None:
+             by: str = "value", palette: str = "YlOrRd", output,
+             renderer: str = "matplotlib", basemap: bool = True) -> Path | None:
     """Render a per-station mean map for `metric`; return the path or None if no data."""
-    points = station_means(data_dir, fips, start, end, metric)
+    points = station_means(data_dir, fips, start, end, metric, by=by)
     if points.empty:
         return None
-    label = f"mean {metric.value} ({metric.unit})"
-    title = f"{fips} {metric.value} {start.isoformat()}..{end.isoformat()}"
+    label = f"mean {y_label(metric, by)}"
+    title = f"{fips} {metric.value} ({by}) {start.isoformat()}..{end.isoformat()}"
     return get_renderer(renderer).render_point_map(
         points, value_label=label, palette=palette, title=title,
         output=output, basemap=basemap)

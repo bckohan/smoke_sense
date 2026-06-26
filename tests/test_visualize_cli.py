@@ -1,6 +1,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 from typer.testing import CliRunner
 
 from smoke_sense import store
@@ -18,6 +19,26 @@ def _seed(tmp_path):
         "metric": Metric.PM2_5.value, "value": 12.0,
         "aqi": pd.NA, "agg_window": 10, "source": "purpleair",
     }])
+    store.write(tmp_path, "06037", df)
+
+
+def _row(ts, metric, value, station, lat, lon, aqi=pd.NA, source="purpleair", agg=10):
+    return {
+        "timestamp": pd.Timestamp(ts, tz="UTC"),
+        "county_fips": "06037", "station_id": station,
+        "latitude": lat, "longitude": lon,
+        "metric": metric.value, "value": value,
+        "aqi": aqi, "agg_window": agg, "source": source,
+    }
+
+
+def _seed_rich(tmp_path):
+    df = pd.DataFrame([
+        _row("2026-06-16T01:00:00", Metric.PM2_5, 10.0, "s1", 34.0, -118.2, aqi=42),
+        _row("2026-06-16T02:00:00", Metric.PM2_5, 20.0, "s1", 34.0, -118.2, aqi=60),
+        _row("2026-06-16T01:00:00", Metric.PM2_5, 5.0, "s2", 33.9, -118.1, aqi=21),
+        _row("2026-06-16T01:00:00", Metric.TEMP, 25.0, "s1", 34.0, -118.2),
+    ])
     store.write(tmp_path, "06037", df)
 
 
@@ -61,3 +82,86 @@ def test_mean_map_unknown_renderer(tmp_path):
         "--metric", "PM2.5", "--renderer", "nope", "--no-basemap",
         "--output-dir", str(tmp_path)])
     assert result.exit_code != 0
+
+
+@pytest.mark.parametrize("kind", ["series", "scatter", "aggregate", "histogram"])
+def test_chart_subcommands_write_png(tmp_path, kind):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", kind, "06037", "--start", "2026-06-16",
+        "--end", "2026-06-16", "--metric", "PM2.5",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    pngs = list((tmp_path / "06037").glob(f"*_{kind}.png"))
+    assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_series_station_filter(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "series", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--station", "s1",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_series_station_filter_no_match_messages(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "series", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--station", "ghost",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "no data" in result.output
+
+
+def test_by_aqi_on_pm25_ok(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "aggregate", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--by", "aqi", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert list((tmp_path / "06037").glob("*_aqi_*_aggregate.png"))
+
+
+def test_by_aqi_on_temperature_fails(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "histogram", "06037", "--start", "2026-06-16",
+        "--metric", "temperature", "--by", "aqi",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code != 0
+
+
+def test_invalid_metric_fails(tmp_path):
+    result = runner.invoke(app, [
+        "visualize", "scatter", "06037", "--start", "2026-06-16",
+        "--metric", "BOGUS", "--output-dir", str(tmp_path)])
+    assert result.exit_code != 0
+
+
+def test_unknown_renderer_fails(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "scatter", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--renderer", "nope",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code != 0
+
+
+def test_no_data_message(tmp_path):
+    result = runner.invoke(app, [
+        "visualize", "series", "99999", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "no data" in result.output
+
+
+def test_mean_map_by_aqi(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "mean-map", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--by", "aqi", "--no-basemap",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert list((tmp_path / "06037").glob("*_aqi_*_mean.png"))

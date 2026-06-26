@@ -23,6 +23,7 @@ def mean_map(
     end: Optional[datetime] = typer.Option(
         None, formats=["%Y-%m-%d"], help="End date (inclusive); defaults to today"),
     metric: str = typer.Option(..., "--metric", help="Metric to render"),
+    by: str = typer.Option("value", "--by", help="Plot raw value or AQI [value|aqi]"),
     palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
     output: Optional[Path] = typer.Option(None, help="Output PNG path"),
     renderer: str = typer.Option("matplotlib", help="Rendering engine"),
@@ -30,8 +31,7 @@ def mean_map(
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """Map each sensor as a dot colored by the mean of a metric over a period."""
-    if not (len(county_fips) == 5 and county_fips.isdigit()):
-        raise typer.BadParameter(f"county FIPS must be 5-digit, got {county_fips!r}")
+    _validate_fips(county_fips)
     try:
         chosen = Metric(metric)
     except ValueError as exc:
@@ -40,13 +40,16 @@ def mean_map(
     start_date = start.date()
     end_date = end.date() if end else date.today()
     out = output or (
-        output_dir / county_fips / f"{chosen.value}_{start_date}_{end_date}_mean.png")
+        output_dir / county_fips
+        / f"{chosen.value}_{by}_{start_date}_{end_date}_mean.png")
 
     try:
         result = viz.mean_map(
             output_dir, county_fips, start_date, end_date, chosen,
-            palette=palette, output=out, renderer=renderer, basemap=basemap)
+            by=by, palette=palette, output=out, renderer=renderer, basemap=basemap)
     except KeyError as exc:  # unknown renderer
+        raise typer.BadParameter(str(exc)) from exc
+    except ValueError as exc:  # invalid --by combo
         raise typer.BadParameter(str(exc)) from exc
 
     if result is None:
@@ -55,3 +58,124 @@ def mean_map(
             f"{start_date}..{end_date}[/]")
         return
     console.print(f"[green]Wrote[/] {result}")
+
+
+def _validate_fips(county_fips: str) -> None:
+    if not (len(county_fips) == 5 and county_fips.isdigit()):
+        raise typer.BadParameter(f"county FIPS must be 5-digit, got {county_fips!r}")
+
+
+def _prepare(county_fips: str, metric: str, by: str) -> tuple[Metric, str]:
+    """Validate inputs; return (chosen Metric, y_column str)."""
+    _validate_fips(county_fips)
+    try:
+        chosen = Metric(metric)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    try:
+        y_column = viz.resolve_by(chosen, by)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    return chosen, y_column
+
+
+def _render_chart(kind: str, method_name: str, county_fips: str, start: datetime,
+                  end: Optional[datetime], metric: str, by: str, palette: str,
+                  output: Optional[Path], renderer: str, output_dir: Path, *,
+                  stations: Optional[list[str]] = None,
+                  extra: Optional[dict] = None) -> None:
+    chosen, y_column = _prepare(county_fips, metric, by)
+    start_date = start.date()
+    end_date = end.date() if end else date.today()
+    obs = viz.metric_observations(output_dir, county_fips, start_date, end_date, chosen)
+    if stations:
+        obs = obs[obs["station_id"].isin(set(stations))]
+    if obs.empty:
+        console.print(
+            f"[yellow]no data for {county_fips}/{chosen.value} in "
+            f"{start_date}..{end_date}[/]")
+        return
+    out = output or (
+        output_dir / county_fips
+        / f"{chosen.value}_{by}_{start_date}_{end_date}_{kind}.png")
+    try:
+        engine = viz.get_chart_renderer(renderer)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    label = viz.y_label(chosen, by)
+    title = f"{county_fips} {chosen.value} ({by}) {start_date}..{end_date}"
+    method = getattr(engine, method_name)
+    result = method(obs, y_column=y_column, y_label=label, title=title,
+                    palette=palette, output=out, **(extra or {}))
+    console.print(f"[green]Wrote[/] {result}")
+
+
+@app.command("series")
+def series(
+    county_fips: str = typer.Argument(..., help="5-digit county FIPS code"),
+    start: datetime = typer.Option(..., formats=["%Y-%m-%d"], help="Start date (inclusive)"),
+    end: Optional[datetime] = typer.Option(None, formats=["%Y-%m-%d"], help="End date (inclusive); defaults to today"),
+    metric: str = typer.Option(..., "--metric", help="Metric to plot"),
+    by: str = typer.Option("value", "--by", help="Plot raw value or AQI [value|aqi]"),
+    station: Optional[list[str]] = typer.Option(None, "--station", help="Limit to these station IDs (repeatable)"),
+    palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
+    output: Optional[Path] = typer.Option(None, help="Output PNG path"),
+    renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
+) -> None:
+    """One line per station over time."""
+    _render_chart("series", "render_series", county_fips, start, end, metric, by,
+                  palette, output, renderer, output_dir, stations=station)
+
+
+@app.command("scatter")
+def scatter(
+    county_fips: str = typer.Argument(..., help="5-digit county FIPS code"),
+    start: datetime = typer.Option(..., formats=["%Y-%m-%d"], help="Start date (inclusive)"),
+    end: Optional[datetime] = typer.Option(None, formats=["%Y-%m-%d"], help="End date (inclusive); defaults to today"),
+    metric: str = typer.Option(..., "--metric", help="Metric to plot"),
+    by: str = typer.Option("value", "--by", help="Plot raw value or AQI [value|aqi]"),
+    palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
+    output: Optional[Path] = typer.Option(None, help="Output PNG path"),
+    renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
+) -> None:
+    """All observations as points colored by station."""
+    _render_chart("scatter", "render_scatter", county_fips, start, end, metric, by,
+                  palette, output, renderer, output_dir)
+
+
+@app.command("aggregate")
+def aggregate(
+    county_fips: str = typer.Argument(..., help="5-digit county FIPS code"),
+    start: datetime = typer.Option(..., formats=["%Y-%m-%d"], help="Start date (inclusive)"),
+    end: Optional[datetime] = typer.Option(None, formats=["%Y-%m-%d"], help="End date (inclusive); defaults to today"),
+    metric: str = typer.Option(..., "--metric", help="Metric to plot"),
+    by: str = typer.Option("value", "--by", help="Plot raw value or AQI [value|aqi]"),
+    band: bool = typer.Option(True, "--band/--no-band", help="Shade min/max band"),
+    palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
+    output: Optional[Path] = typer.Option(None, help="Output PNG path"),
+    renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
+) -> None:
+    """Mean across stations per timestamp, optional min/max band."""
+    _render_chart("aggregate", "render_aggregate", county_fips, start, end, metric, by,
+                  palette, output, renderer, output_dir, extra={"band": band})
+
+
+@app.command("histogram")
+def histogram(
+    county_fips: str = typer.Argument(..., help="5-digit county FIPS code"),
+    start: datetime = typer.Option(..., formats=["%Y-%m-%d"], help="Start date (inclusive)"),
+    end: Optional[datetime] = typer.Option(None, formats=["%Y-%m-%d"], help="End date (inclusive); defaults to today"),
+    metric: str = typer.Option(..., "--metric", help="Metric to plot"),
+    by: str = typer.Option("value", "--by", help="Plot raw value or AQI [value|aqi]"),
+    bins: int = typer.Option(30, "--bins", help="Histogram bin count"),
+    palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
+    output: Optional[Path] = typer.Option(None, help="Output PNG path"),
+    renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
+) -> None:
+    """Distribution of the chosen quantity over all observations."""
+    _render_chart("histogram", "render_histogram", county_fips, start, end, metric, by,
+                  palette, output, renderer, output_dir, extra={"bins": bins})

@@ -1,0 +1,26 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-25-visualize-charts-and-by.md",
+  "tasks": [
+    {
+      "id": 63,
+      "subject": "Task 0: Shared observation helpers + by on station_means/mean_map",
+      "status": "completed",
+      "description": "**Goal:** Add `metric_observations`, `resolve_by`, `y_label`; thread `by` through `station_means` and `mean_map`.\n\n**Files:**\n- Modify: src/smoke_sense/visualize.py\n- Test: tests/test_visualize.py\n\n**Verify:** uv run pytest tests/test_visualize.py -v\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/visualize.py\", \"tests/test_visualize.py\"], \"verifyCommand\": \"uv run pytest tests/test_visualize.py -v\", \"acceptanceCriteria\": [\"metric_observations columns + empty\", \"resolve_by value/aqi/raises\", \"y_label value/aqi\", \"station_means by=aqi\", \"mean_map forwards by\"]}\n```"
+    },
+    {
+      "id": 64,
+      "subject": "Task 1: ChartRenderer registry + MatplotlibChartRenderer",
+      "status": "completed",
+      "blockedBy": [63],
+      "description": "**Goal:** Add ChartRenderer ABC + registry + matplotlib impl rendering series/scatter/aggregate/histogram PNGs.\n\n**Files:**\n- Modify: src/smoke_sense/visualize.py\n- Test: tests/test_visualize.py\n\n**Verify:** uv run pytest tests/test_visualize.py -v\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/visualize.py\", \"tests/test_visualize.py\"], \"verifyCommand\": \"uv run pytest tests/test_visualize.py -v\", \"acceptanceCriteria\": [\"get_chart_renderer matplotlib; unknown raises\", \"four methods write PNG\", \"aggregate band on/off\", \"histogram bins\"]}\n```"
+    },
+    {
+      "id": 65,
+      "subject": "Task 2: CLI --by on mean-map + chart subcommands",
+      "status": "completed",
+      "blockedBy": [63, 64],
+      "description": "**Goal:** Add --by to mean-map and four chart subcommands wired to the chart registry.\n\n**Files:**\n- Modify: src/smoke_sense/bin/visualize.py\n- Test: tests/test_visualize_cli.py\n\n**Verify:** uv run pytest tests/test_visualize_cli.py -v then uv run pytest -q\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/visualize.py\", \"tests/test_visualize_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_visualize_cli.py -v\", \"acceptanceCriteria\": [\"four subcommands write PNG\", \"station filter + no-match message\", \"by aqi pm25 ok / temp fails\", \"invalid metric/renderer non-zero\", \"mean-map --by aqi\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-25"
+}
