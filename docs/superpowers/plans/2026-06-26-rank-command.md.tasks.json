@@ -1,0 +1,19 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-26-rank-command.md",
+  "tasks": [
+    {
+      "id": 79,
+      "subject": "Task 1: Pure ranking.py module",
+      "status": "completed",
+      "description": "**Goal:** Implement rank_stations — group per station, aggregate (min/max/mean), stable sort, limit.\n\n**Files:** src/smoke_sense/ranking.py, tests/test_ranking.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/ranking.py\", \"tests/test_ranking.py\"], \"verifyCommand\": \"uv run pytest tests/test_ranking.py -v\", \"acceptanceCriteria\": [\"rank_stations returns station_id/value/count\", \"min/max/mean correct\", \"asc/desc + stable ties\", \"limit incl 0=all\", \"null drop + count\", \"empty/all-null -> empty\"]}\n```"
+    },
+    {
+      "id": 80,
+      "subject": "Task 2: rank CLI command",
+      "status": "completed",
+      "blockedBy": [79],
+      "description": "**Goal:** Add the smoke-sense rank Typer command and register it in bin/__init__.py.\n\n**Files:** src/smoke_sense/bin/rank.py, src/smoke_sense/bin/__init__.py, tests/test_rank_cli.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/rank.py\", \"src/smoke_sense/bin/__init__.py\", \"tests/test_rank_cli.py\"], \"verifyCommand\": \"uv run pytest\", \"acceptanceCriteria\": [\"table default desc/limit10\", \"json shape metric/by/agg/order/stations\", \"--asc reverses, --limit, bad --agg nonzero\", \"--exclude-station drops\", \"multi-county + no-data message\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-26T00:00:00Z"
+}
