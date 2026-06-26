@@ -125,3 +125,30 @@ def test_summary_cli_no_filter_keeps_garbage(tmp_path):
               if m["metric"] == "PM2.5")
     assert pm["filtered"] == 0
     assert pm["value"]["min"] == -999.0
+
+
+def test_summary_cli_fully_removed_metric_absent(tmp_path):
+    """When ALL rows of a metric are dropped by the outlier filter, that metric
+    must have NO entry in the summary ``metrics`` list (documented contract)."""
+    # healthy PM2.5 rows — all within [0, 1000]
+    healthy = [
+        _cli_row(f"2026-06-16T0{i}:00:00", Metric.PM2_5, v, "s1")
+        for i, v in enumerate([10, 11, 9, 8, 12])
+    ]
+    # fully-bad PM10 rows — all outside physical bounds [0, 2000]
+    bad_pm10 = [
+        _cli_row("2026-06-16T01:00:00", Metric.PM10, -5.0, "s1"),
+        _cli_row("2026-06-16T02:00:00", Metric.PM10, -10.0, "s1"),
+        _cli_row("2026-06-16T03:00:00", Metric.PM10, 5000.0, "s1"),
+    ]
+    store.write(tmp_path, "06037", pd.DataFrame(healthy + bad_pm10))
+
+    result = runner.invoke(app, [
+        "summary", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+        "--output", str(tmp_path), "--json",
+    ])
+    assert result.exit_code == 0, result.output
+    metrics = json.loads(result.output)["06037"]["metrics"]
+    metric_names = [m["metric"] for m in metrics]
+    assert "PM2.5" in metric_names, "healthy PM2.5 must appear in metrics"
+    assert "PM10" not in metric_names, "fully-filtered PM10 must be absent from metrics"

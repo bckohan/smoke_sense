@@ -101,15 +101,20 @@ Starting values (all overridable); `(low, high)` in each metric's canonical unit
 
 ### Shared CLI helper (`bin/_outlier_cli.py`)
 
-- A function `apply_outlier_filter(df, *, enabled, zscore, iqr, no_range, bounds) ->
+- `filter_frame(df, *, enabled, no_range, zscore, iqr_on, iqr_k, bound) ->
   tuple[pd.DataFrame, OutlierReport]` that:
   - If `not enabled`, returns `(df, zeroed report)` unchanged.
   - Else builds an `OutlierConfig` from `DEFAULT_CONFIG` with overrides applied
-    (`range_enabled = not no_range`; `zscore`/`iqr` replaced when provided; `bounds`
-    merged with parsed overrides) and calls `filter_outliers`.
+    (`range_enabled = not no_range`; `zscore` replaced when provided, `<=0` disables;
+    `iqr = iqr_k if iqr_on else None`; `bounds` merged with parsed overrides) and calls
+    `filter_outliers`.
   - Logs `"filtered {total} outlier rows ({per_metric})"` at INFO via the module logger.
+- `make_filter(*, enabled, no_range, zscore, iqr_on, iqr_k, bound) ->
+  Callable[[DataFrame], DataFrame]`: a closure over `filter_frame` returning only the
+  cleaned frame, for consumers (visualize) that want a transform hook and don't need the
+  report. `build_config` constructs the `OutlierConfig` from overrides.
 - Override parsing: `parse_bound("PM2.5:0:500") -> (Metric.PM2_5, (0.0, 500.0))`; invalid
-  forms raise `ValueError` (surfaced by callers as `typer.BadParameter`).
+  forms raise `ValueError` (surfaced by `filter_frame` as `typer.BadParameter`).
 - The shared option set, added to each consuming command:
   - `--outlier-filter / --no-outlier-filter` (default on)
   - `--outlier-zscore FLOAT` (override z threshold; `0`/negative disables the z check)
@@ -192,4 +197,4 @@ is not part of this spec's surface.)
   disk is untouched).
 - A config *file* (code defaults + CLI overrides only, per decision).
 - Any change to `forecast`; it is a bare stub that reads no data. When the simulation is
-  built it will reuse `_outlier_cli.apply_outlier_filter` unchanged.
+  built it will reuse `_outlier_cli.filter_frame` / `make_filter` unchanged.
