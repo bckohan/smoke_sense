@@ -221,3 +221,32 @@ def test_chart_histogram_respects_bins(tmp_path):
         _obs_frame(), y_column="value", y_label="PM2.5 (µg/m³)",
         title="t", palette="YlOrRd", output=out, bins=5)
     assert result == out and out.exists() and out.stat().st_size > 0
+
+
+def test_metric_observations_applies_outlier_filter(tmp_path):
+    _seed(tmp_path)  # existing helper seeds PM2.5 s1=[10,20], s2=[5], TEMP s1=25
+
+    def drop_high(df):
+        return df[df["value"] < 15.0]
+
+    out = visualize.metric_observations(
+        tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 16),
+        Metric.PM2_5, outlier_filter=drop_high)
+    assert out["value"].max() < 15.0
+    # without the filter the 20.0 reading is present
+    base = visualize.metric_observations(
+        tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 16), Metric.PM2_5)
+    assert base["value"].max() == 20.0
+
+
+def test_station_means_applies_outlier_filter(tmp_path):
+    _seed(tmp_path)
+
+    def drop_high(df):
+        return df[df["value"] < 15.0]
+
+    out = visualize.station_means(
+        tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 16),
+        Metric.PM2_5, outlier_filter=drop_high)
+    # s1 now only has the 10.0 reading -> mean 10.0
+    assert out[out["station_id"] == "s1"]["mean"].iloc[0] == 10.0

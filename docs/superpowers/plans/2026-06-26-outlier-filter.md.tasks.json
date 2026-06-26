@@ -1,0 +1,40 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-26-outlier-filter.md",
+  "tasks": [
+    {
+      "id": 71,
+      "subject": "Task 0: outliers.py core (config, masks, filter_outliers)",
+      "status": "completed",
+      "description": "**Goal:** Pure outlier detection module.\n\n**Files:** src/smoke_sense/outliers.py, tests/test_outliers.py\n\n**Verify:** uv run pytest tests/test_outliers.py -v\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/outliers.py\", \"tests/test_outliers.py\"], \"verifyCommand\": \"uv run pytest tests/test_outliers.py -v\", \"acceptanceCriteria\": [\"range/zscore/iqr masks\", \"filter_outliers union + report\", \"empty-safe\"]}\n```"
+    },
+    {
+      "id": 72,
+      "subject": "Task 1: bin/_outlier_cli.py shared helper",
+      "status": "completed",
+      "blockedBy": [71],
+      "description": "**Goal:** CLI bridge: parse_bound/build_config/filter_frame/make_filter.\n\n**Files:** src/smoke_sense/bin/_outlier_cli.py, tests/test_outlier_cli.py\n\n**Verify:** uv run pytest tests/test_outlier_cli.py -v\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/_outlier_cli.py\", \"tests/test_outlier_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_outlier_cli.py -v\", \"acceptanceCriteria\": [\"parse_bound\", \"build_config overrides\", \"filter_frame enabled/disabled\", \"bad bound BadParameter\", \"make_filter callable\"]}\n```"
+    },
+    {
+      "id": 73,
+      "subject": "Task 2: Summary integration",
+      "status": "completed",
+      "blockedBy": [72],
+      "description": "**Goal:** summarize filtered param + summary CLI filter-by-default + filtered column.\n\n**Files:** src/smoke_sense/summary.py, src/smoke_sense/bin/summary.py, tests/test_summary.py\n\n**Verify:** uv run pytest tests/test_summary.py -v\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/summary.py\", \"src/smoke_sense/bin/summary.py\", \"tests/test_summary.py\"], \"verifyCommand\": \"uv run pytest tests/test_summary.py -v\", \"acceptanceCriteria\": [\"summarize filtered field\", \"CLI filters by default + json count\", \"--no-outlier-filter keeps garbage\"]}\n```"
+    },
+    {
+      "id": 74,
+      "subject": "Task 3: Visualize core outlier_filter hook",
+      "status": "completed",
+      "blockedBy": [71],
+      "description": "**Goal:** outlier_filter hook on metric_observations/station_means/mean_map.\n\n**Files:** src/smoke_sense/visualize.py, tests/test_visualize.py\n\n**Verify:** uv run pytest tests/test_visualize.py -v\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/visualize.py\", \"tests/test_visualize.py\"], \"verifyCommand\": \"uv run pytest tests/test_visualize.py -v\", \"acceptanceCriteria\": [\"filter applied before metric filter\", \"threaded through means/mean_map\", \"default unchanged\"]}\n```"
+    },
+    {
+      "id": 75,
+      "subject": "Task 4: Visualize CLI wiring",
+      "status": "completed",
+      "blockedBy": [72, 74],
+      "description": "**Goal:** Six outlier options on all five visualize subcommands; build+pass filter; on by default.\n\n**Files:** src/smoke_sense/bin/visualize.py, tests/test_visualize_cli.py\n\n**Verify:** uv run pytest tests/test_visualize_cli.py -v then uv run pytest -q\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/visualize.py\", \"tests/test_visualize_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_visualize_cli.py -v\", \"acceptanceCriteria\": [\"6 options on 5 subcommands\", \"garbage excluded by default / kept with flag\", \"bad bound non-zero\", \"full suite green\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-26"
+}

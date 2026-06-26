@@ -11,6 +11,7 @@ from rich.console import Console
 
 from .. import visualize as viz
 from ..data import Metric
+from . import _outlier_cli
 
 app = typer.Typer(help="Visualizations of stored AQI data.")
 console = Console()
@@ -28,6 +29,19 @@ def mean_map(
     output: Optional[Path] = typer.Option(None, help="Output PNG path"),
     renderer: str = typer.Option("matplotlib", help="Rendering engine"),
     basemap: bool = typer.Option(True, "--basemap/--no-basemap", help="Overlay map tiles"),
+    outlier_filter_on: bool = typer.Option(
+        True, "--outlier-filter/--no-outlier-filter",
+        help="Drop likely-erroneous readings before plotting"),
+    outlier_zscore: Optional[float] = typer.Option(
+        None, "--outlier-zscore", help="Per-station z-score threshold (<=0 disables)"),
+    outlier_iqr: bool = typer.Option(
+        False, "--outlier-iqr/--no-outlier-iqr", help="Enable per-station IQR check"),
+    outlier_iqr_k: float = typer.Option(
+        3.0, "--outlier-iqr-k", help="IQR multiplier"),
+    no_outlier_range: bool = typer.Option(
+        False, "--no-outlier-range", help="Disable the physical-bounds check"),
+    outlier_bound: Optional[list[str]] = typer.Option(
+        None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """Map each sensor as a dot colored by the mean of a metric over a period."""
@@ -43,10 +57,16 @@ def mean_map(
         output_dir / county_fips
         / f"{chosen.value}_{by}_{start_date}_{end_date}_mean.png")
 
+    ofilter = _outlier_cli.make_filter(
+        enabled=outlier_filter_on, no_range=no_outlier_range,
+        zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
+        bound=outlier_bound)
+
     try:
         result = viz.mean_map(
             output_dir, county_fips, start_date, end_date, chosen,
-            by=by, palette=palette, output=out, renderer=renderer, basemap=basemap)
+            by=by, palette=palette, output=out, renderer=renderer, basemap=basemap,
+            outlier_filter=ofilter)
     except KeyError as exc:  # unknown renderer
         raise typer.BadParameter(str(exc)) from exc
     except ValueError as exc:  # invalid --by combo
@@ -83,11 +103,13 @@ def _render_chart(kind: str, method_name: str, county_fips: str, start: datetime
                   end: Optional[datetime], metric: str, by: str, palette: str,
                   output: Optional[Path], renderer: str, output_dir: Path, *,
                   stations: Optional[list[str]] = None,
-                  extra: Optional[dict] = None) -> None:
+                  extra: Optional[dict] = None,
+                  outlier_filter=None) -> None:
     chosen, y_column = _prepare(county_fips, metric, by)
     start_date = start.date()
     end_date = end.date() if end else date.today()
-    obs = viz.metric_observations(output_dir, county_fips, start_date, end_date, chosen)
+    obs = viz.metric_observations(output_dir, county_fips, start_date, end_date,
+                                  chosen, outlier_filter=outlier_filter)
     if stations:
         obs = obs[obs["station_id"].isin(set(stations))]
     if obs.empty:
@@ -126,11 +148,29 @@ def series(
     palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
     output: Optional[Path] = typer.Option(None, help="Output PNG path"),
     renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    outlier_filter_on: bool = typer.Option(
+        True, "--outlier-filter/--no-outlier-filter",
+        help="Drop likely-erroneous readings before plotting"),
+    outlier_zscore: Optional[float] = typer.Option(
+        None, "--outlier-zscore", help="Per-station z-score threshold (<=0 disables)"),
+    outlier_iqr: bool = typer.Option(
+        False, "--outlier-iqr/--no-outlier-iqr", help="Enable per-station IQR check"),
+    outlier_iqr_k: float = typer.Option(
+        3.0, "--outlier-iqr-k", help="IQR multiplier"),
+    no_outlier_range: bool = typer.Option(
+        False, "--no-outlier-range", help="Disable the physical-bounds check"),
+    outlier_bound: Optional[list[str]] = typer.Option(
+        None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """One line per station over time."""
+    ofilter = _outlier_cli.make_filter(
+        enabled=outlier_filter_on, no_range=no_outlier_range,
+        zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
+        bound=outlier_bound)
     _render_chart("series", "render_series", county_fips, start, end, metric, by,
-                  palette, output, renderer, output_dir, stations=station)
+                  palette, output, renderer, output_dir, stations=station,
+                  outlier_filter=ofilter)
 
 
 @app.command("scatter")
@@ -143,11 +183,28 @@ def scatter(
     palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
     output: Optional[Path] = typer.Option(None, help="Output PNG path"),
     renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    outlier_filter_on: bool = typer.Option(
+        True, "--outlier-filter/--no-outlier-filter",
+        help="Drop likely-erroneous readings before plotting"),
+    outlier_zscore: Optional[float] = typer.Option(
+        None, "--outlier-zscore", help="Per-station z-score threshold (<=0 disables)"),
+    outlier_iqr: bool = typer.Option(
+        False, "--outlier-iqr/--no-outlier-iqr", help="Enable per-station IQR check"),
+    outlier_iqr_k: float = typer.Option(
+        3.0, "--outlier-iqr-k", help="IQR multiplier"),
+    no_outlier_range: bool = typer.Option(
+        False, "--no-outlier-range", help="Disable the physical-bounds check"),
+    outlier_bound: Optional[list[str]] = typer.Option(
+        None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """All observations as points colored by station."""
+    ofilter = _outlier_cli.make_filter(
+        enabled=outlier_filter_on, no_range=no_outlier_range,
+        zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
+        bound=outlier_bound)
     _render_chart("scatter", "render_scatter", county_fips, start, end, metric, by,
-                  palette, output, renderer, output_dir)
+                  palette, output, renderer, output_dir, outlier_filter=ofilter)
 
 
 @app.command("aggregate")
@@ -161,11 +218,29 @@ def aggregate(
     palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
     output: Optional[Path] = typer.Option(None, help="Output PNG path"),
     renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    outlier_filter_on: bool = typer.Option(
+        True, "--outlier-filter/--no-outlier-filter",
+        help="Drop likely-erroneous readings before plotting"),
+    outlier_zscore: Optional[float] = typer.Option(
+        None, "--outlier-zscore", help="Per-station z-score threshold (<=0 disables)"),
+    outlier_iqr: bool = typer.Option(
+        False, "--outlier-iqr/--no-outlier-iqr", help="Enable per-station IQR check"),
+    outlier_iqr_k: float = typer.Option(
+        3.0, "--outlier-iqr-k", help="IQR multiplier"),
+    no_outlier_range: bool = typer.Option(
+        False, "--no-outlier-range", help="Disable the physical-bounds check"),
+    outlier_bound: Optional[list[str]] = typer.Option(
+        None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """Mean across stations per timestamp, optional min/max band."""
+    ofilter = _outlier_cli.make_filter(
+        enabled=outlier_filter_on, no_range=no_outlier_range,
+        zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
+        bound=outlier_bound)
     _render_chart("aggregate", "render_aggregate", county_fips, start, end, metric, by,
-                  palette, output, renderer, output_dir, extra={"band": band})
+                  palette, output, renderer, output_dir, extra={"band": band},
+                  outlier_filter=ofilter)
 
 
 @app.command("histogram")
@@ -179,8 +254,26 @@ def histogram(
     palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
     output: Optional[Path] = typer.Option(None, help="Output PNG path"),
     renderer: str = typer.Option("matplotlib", help="Rendering engine"),
+    outlier_filter_on: bool = typer.Option(
+        True, "--outlier-filter/--no-outlier-filter",
+        help="Drop likely-erroneous readings before plotting"),
+    outlier_zscore: Optional[float] = typer.Option(
+        None, "--outlier-zscore", help="Per-station z-score threshold (<=0 disables)"),
+    outlier_iqr: bool = typer.Option(
+        False, "--outlier-iqr/--no-outlier-iqr", help="Enable per-station IQR check"),
+    outlier_iqr_k: float = typer.Option(
+        3.0, "--outlier-iqr-k", help="IQR multiplier"),
+    no_outlier_range: bool = typer.Option(
+        False, "--no-outlier-range", help="Disable the physical-bounds check"),
+    outlier_bound: Optional[list[str]] = typer.Option(
+        None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
     output_dir: Path = typer.Option(Path("./data"), "--output-dir", help="Data directory"),
 ) -> None:
     """Distribution of the chosen quantity over all observations."""
+    ofilter = _outlier_cli.make_filter(
+        enabled=outlier_filter_on, no_range=no_outlier_range,
+        zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
+        bound=outlier_bound)
     _render_chart("histogram", "render_histogram", county_fips, start, end, metric, by,
-                  palette, output, renderer, output_dir, extra={"bins": bins})
+                  palette, output, renderer, output_dir, extra={"bins": bins},
+                  outlier_filter=ofilter)

@@ -6,6 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import date
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -39,13 +40,19 @@ def y_label(metric: Metric, by: str) -> str:
 
 
 def metric_observations(data_dir, fips: str, start: date, end: date,
-                        metric: Metric) -> pd.DataFrame:
+                        metric: Metric,
+                        outlier_filter: Callable[[pd.DataFrame],
+                                                 pd.DataFrame] | None = None
+                        ) -> pd.DataFrame:
     """Long observations for `metric` over [start, end].
 
     Returns columns timestamp, station_id, value, aqi. Empty (with those
-    columns) if there is no matching data.
+    columns) if there is no matching data. If `outlier_filter` is given it is
+    applied to the full read frame before the metric filter.
     """
     obs = store.read_range(data_dir, fips, start, end)
+    if outlier_filter is not None:
+        obs = outlier_filter(obs)
     obs = obs[obs["metric"] == metric.value]
     if obs.empty:
         return pd.DataFrame(columns=_OBS_COLUMNS)
@@ -53,14 +60,18 @@ def metric_observations(data_dir, fips: str, start: date, end: date,
 
 
 def station_means(data_dir, fips: str, start: date, end: date,
-                  metric: Metric, by: str = "value") -> pd.DataFrame:
+                  metric: Metric, by: str = "value",
+                  outlier_filter: Callable[[pd.DataFrame],
+                                           pd.DataFrame] | None = None
+                  ) -> pd.DataFrame:
     """Per-station mean of `metric`'s value (or AQI) over [start, end].
 
     Returns columns station_id, latitude, longitude, mean. Empty (with those
     columns) if there is no matching data or no station table.
     """
     column = resolve_by(metric, by)
-    obs = metric_observations(data_dir, fips, start, end, metric)
+    obs = metric_observations(data_dir, fips, start, end, metric,
+                              outlier_filter=outlier_filter)
     if obs.empty:
         return pd.DataFrame(columns=_MEAN_COLUMNS)
     means = (
@@ -253,9 +264,12 @@ class MatplotlibChartRenderer(ChartRenderer):
 
 def mean_map(data_dir, fips: str, start: date, end: date, metric: Metric, *,
              by: str = "value", palette: str = "YlOrRd", output,
-             renderer: str = "matplotlib", basemap: bool = True) -> Path | None:
+             renderer: str = "matplotlib", basemap: bool = True,
+             outlier_filter: Callable[[pd.DataFrame],
+                                      pd.DataFrame] | None = None) -> Path | None:
     """Render a per-station mean map for `metric`; return the path or None if no data."""
-    points = station_means(data_dir, fips, start, end, metric, by=by)
+    points = station_means(data_dir, fips, start, end, metric, by=by,
+                           outlier_filter=outlier_filter)
     if points.empty or points["mean"].dropna().empty:
         return None
     label = f"mean {y_label(metric, by)}"

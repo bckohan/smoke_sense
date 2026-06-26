@@ -13,6 +13,7 @@ from rich.table import Table
 
 from .. import store
 from .. import summary as summary_core
+from . import _outlier_cli
 
 console = Console()
 
@@ -49,7 +50,7 @@ def _render(fips: str, s: dict) -> None:
     console.print(breakdown)
 
     metrics = Table(title="Metrics")
-    for col in ("metric", "stations", "sources",
+    for col in ("metric", "stations", "sources", "filtered",
                 "min", "p25", "p50", "mean", "p75", "max", "aqi min/mean/max"):
         metrics.add_column(col)
     for row in s["metrics"]:
@@ -60,6 +61,7 @@ def _render(fips: str, s: dict) -> None:
         # that `:.1f` would collapse to 0.0.
         metrics.add_row(
             row["metric"], str(row["stations"]), ",".join(row["sources"]),
+            str(row["filtered"]),
             f"{v['min']:g}", f"{v['p25']:g}", f"{v['p50']:g}", f"{v['mean']:g}",
             f"{v['p75']:g}", f"{v['max']:g}", aqi_str,
         )
@@ -74,6 +76,19 @@ def summary(
     ),
     output: Path = typer.Option(Path("./data"), help="Data directory"),
     json: bool = typer.Option(False, "--json", help="Emit JSON instead of tables"),
+    outlier_filter: bool = typer.Option(
+        True, "--outlier-filter/--no-outlier-filter",
+        help="Drop likely-erroneous readings before summarizing"),
+    outlier_zscore: Optional[float] = typer.Option(
+        None, "--outlier-zscore", help="Per-station z-score threshold (<=0 disables)"),
+    outlier_iqr: bool = typer.Option(
+        False, "--outlier-iqr/--no-outlier-iqr", help="Enable per-station IQR check"),
+    outlier_iqr_k: float = typer.Option(
+        3.0, "--outlier-iqr-k", help="IQR multiplier"),
+    no_outlier_range: bool = typer.Option(
+        False, "--no-outlier-range", help="Disable the physical-bounds check"),
+    outlier_bound: Optional[List[str]] = typer.Option(
+        None, "--outlier-bound", help="Override a bound: METRIC:LOW:HIGH (repeatable)"),
 ) -> None:
     """Summarize stored AQI data for the given counties and time range."""
     for fips in county_fips:
@@ -83,12 +98,15 @@ def summary(
     start_date = start.date()
     end_date = end.date() if end else date.today()
 
-    results = {
-        fips: summary_core.summarize(
-            store.read_range(output, fips, start_date, end_date), start_date, end_date
-        )
-        for fips in county_fips
-    }
+    results = {}
+    for fips in county_fips:
+        raw = store.read_range(output, fips, start_date, end_date)
+        clean, report = _outlier_cli.filter_frame(
+            raw, enabled=outlier_filter, no_range=no_outlier_range,
+            zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
+            bound=outlier_bound)
+        results[fips] = summary_core.summarize(
+            clean, start_date, end_date, filtered=report.per_metric)
 
     if json:
         typer.echo(_json.dumps(results))

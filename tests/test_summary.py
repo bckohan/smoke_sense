@@ -1,9 +1,14 @@
+import json
 from datetime import date
 
 import pandas as pd
+from typer.testing import CliRunner
 
-from smoke_sense import data, summary
+from smoke_sense import data, store, summary
+from smoke_sense.bin import app
 from smoke_sense.data import Metric
+
+runner = CliRunner()
 
 
 def _row(ts, metric, value, aqi, source, agg, station):
@@ -60,3 +65,63 @@ def test_summarize_coverage_breakdown_and_stats():
 
     o3 = next(p for p in s["metrics"] if p["metric"] == "O3")
     assert o3["aqi"] is None  # the only O3 row had a null AQI
+
+
+# ---------------------------------------------------------------------------
+# Task 2: filtered field + CLI outlier integration
+# ---------------------------------------------------------------------------
+
+def _cli_row(ts, metric, value, station, aqi=pd.NA, source="purpleair", agg=10):
+    return {
+        "timestamp": pd.Timestamp(ts, tz="UTC"),
+        "county_fips": "06037", "station_id": station,
+        "latitude": 34.0, "longitude": -118.2,
+        "metric": metric.value, "value": value,
+        "aqi": aqi, "agg_window": agg, "source": source,
+    }
+
+
+def test_summarize_filtered_field():
+    df = pd.DataFrame([_cli_row("2026-06-16T01:00:00", Metric.PM2_5, 10.0, "s1")])
+    out = summary.summarize(df, date(2026, 6, 16), date(2026, 6, 16),
+                            filtered={"PM2.5": 3})
+    pm = next(m for m in out["metrics"] if m["metric"] == "PM2.5")
+    assert pm["filtered"] == 3
+
+
+def test_summarize_filtered_default_zero():
+    df = pd.DataFrame([_cli_row("2026-06-16T01:00:00", Metric.PM2_5, 10.0, "s1")])
+    out = summary.summarize(df, date(2026, 6, 16), date(2026, 6, 16))
+    pm = next(m for m in out["metrics"] if m["metric"] == "PM2.5")
+    assert pm["filtered"] == 0
+
+
+def _seed_with_garbage(tmp_path):
+    rows = [_cli_row(f"2026-06-16T0{i}:00:00", Metric.PM2_5, v, "s1")
+            for i, v in enumerate([10, 11, 9, 8, 12])]
+    rows.append(_cli_row("2026-06-16T09:00:00", Metric.PM2_5, -999.0, "s1"))  # garbage
+    store.write(tmp_path, "06037", pd.DataFrame(rows))
+
+
+def test_summary_cli_filters_by_default(tmp_path):
+    _seed_with_garbage(tmp_path)
+    result = runner.invoke(app, [
+        "summary", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+        "--output", str(tmp_path), "--json"])
+    assert result.exit_code == 0, result.output
+    data_out = json.loads(result.output)["06037"]
+    pm = next(m for m in data_out["metrics"] if m["metric"] == "PM2.5")
+    assert pm["filtered"] == 1
+    assert pm["value"]["min"] >= 0  # the -999 was removed
+
+
+def test_summary_cli_no_filter_keeps_garbage(tmp_path):
+    _seed_with_garbage(tmp_path)
+    result = runner.invoke(app, [
+        "summary", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+        "--output", str(tmp_path), "--json", "--no-outlier-filter"])
+    assert result.exit_code == 0, result.output
+    pm = next(m for m in json.loads(result.output)["06037"]["metrics"]
+              if m["metric"] == "PM2.5")
+    assert pm["filtered"] == 0
+    assert pm["value"]["min"] == -999.0

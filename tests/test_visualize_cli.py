@@ -189,3 +189,47 @@ def test_mean_map_by_aqi_all_null_no_data_message(tmp_path):
     assert result.exit_code == 0, result.output
     assert "no" in result.output
     assert not list((tmp_path / "06037").glob("*_aqi_*_mean.png"))
+
+
+def _seed_with_garbage(tmp_path):
+    rows = [_row(f"2026-06-16T0{i}:00:00", Metric.PM2_5, v, "s1", 34.0, -118.2)
+            for i, v in enumerate([10, 11, 9, 8, 12])]
+    rows.append(_row("2026-06-16T09:00:00", Metric.PM2_5, -999.0, "s1", 34.0, -118.2))
+    store.write(tmp_path, "06037", pd.DataFrame(rows))
+
+
+def test_histogram_filters_garbage_by_default(tmp_path):
+    _seed_with_garbage(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "histogram", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert list((tmp_path / "06037").glob("*_histogram.png"))
+
+
+def test_no_outlier_filter_keeps_garbage(tmp_path):
+    _seed_with_garbage(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "histogram", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--no-outlier-filter", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_visualize_bad_outlier_bound_fails(tmp_path):
+    _seed_with_garbage(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "histogram", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--outlier-bound", "PM2.5:bad",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code != 0
+
+
+def test_render_chart_excludes_garbage(tmp_path):
+    from smoke_sense import visualize as viz
+    from smoke_sense.bin import _outlier_cli
+    _seed_with_garbage(tmp_path)
+    f = _outlier_cli.make_filter(enabled=True, no_range=False, zscore=None,
+                                 iqr_on=False, iqr_k=3.0, bound=None)
+    obs = viz.metric_observations(tmp_path, "06037", date(2026, 6, 16),
+                                  date(2026, 6, 16), Metric.PM2_5, outlier_filter=f)
+    assert obs["value"].min() >= 0  # -999 dropped

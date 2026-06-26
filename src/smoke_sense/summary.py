@@ -14,7 +14,8 @@ def _days(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
 
-def summarize(df: pd.DataFrame, start: date, end: date) -> dict:
+def summarize(df: pd.DataFrame, start: date, end: date,
+              filtered: dict | None = None) -> dict:
     """Return a JSON-serializable summary of `df` over [start, end]."""
     all_days = _days(start, end)
     rng = {"start": start.isoformat(), "end": end.isoformat()}
@@ -60,6 +61,7 @@ def summarize(df: pd.DataFrame, start: date, end: date) -> dict:
             "metric": str(metric),
             "stations": int(group["station_id"].nunique()),
             "sources": sorted({str(s) for s in group["source"].unique()}),
+            "filtered": int((filtered or {}).get(str(metric), 0)),
             "value": {
                 "min": float(values.min()),
                 "p25": float(values.quantile(0.25)),
