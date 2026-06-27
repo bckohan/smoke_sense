@@ -1,0 +1,33 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-27-clarity-lausd-provider.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Provider skeleton — registration, metric map, _get",
+      "status": "completed",
+      "description": "**Goal:** A registered ClarityProvider with metric mapping and a shared `_get` (browser User-Agent, 429/5xx backoff, SPA HTML-fallback guard).\n\n**Files:**\n- Create: src/smoke_sense/providers/clarity.py\n- Modify: src/smoke_sense/providers/__init__.py:6\n- Create: tests/test_providers_clarity.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/clarity.py\", \"src/smoke_sense/providers/__init__.py\", \"tests/test_providers_clarity.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_clarity.py -v\", \"acceptanceCriteria\": [\"registered in all_providers\", \"supported_metrics + cadence\", \"_get UA + backoff + HTML guard\", \"ignores foreign creds\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Station discovery — _list_stations and _filter_stations",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** Parse the markers endpoint into station dicts and filter them to a county polygon.\n\n**Files:**\n- Modify: src/smoke_sense/providers/clarity.py\n- Modify: tests/test_providers_clarity.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/clarity.py\", \"tests/test_providers_clarity.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_clarity.py -k 'list_stations or filter_stations' -v\", \"acceptanceCriteria\": [\"parse markers + skip missing coords\", \"polygon filter\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: CSV parsing — _parse_csv",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** Convert a station's measurements CSV into a common-schema frame.\n\n**Files:**\n- Modify: src/smoke_sense/providers/clarity.py\n- Modify: tests/test_providers_clarity.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/clarity.py\", \"tests/test_providers_clarity.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_clarity.py -k parse_csv -v\", \"acceptanceCriteria\": [\"metric map + NO2 conversion\", \"AQI from columns\", \"dropna empty cells\", \"UTC timestamp + wanted filter\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: fetch — orchestration with county + window filtering",
+      "status": "completed",
+      "blockedBy": [2, 3],
+      "description": "**Goal:** Implement fetch() tying discovery, download, parsing, county filtering, and date-window filtering together (replacing the Task 1 stub).\n\n**Files:**\n- Modify: src/smoke_sense/providers/clarity.py\n- Modify: tests/test_providers_clarity.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/providers/clarity.py\", \"tests/test_providers_clarity.py\"], \"verifyCommand\": \"uv run pytest tests/test_providers_clarity.py -v && uv run pytest -q\", \"acceptanceCriteria\": [\"no-metrics no requests\", \"download + window filter\", \"polygon exclusion\", \"no regressions\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-27"
+}
