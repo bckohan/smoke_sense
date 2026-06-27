@@ -256,11 +256,63 @@ from pathlib import Path
 
 
 def test_assign_colors_deterministic():
-    c1 = visualize._assign_colors(["s2", "s1"], "viridis")
-    c2 = visualize._assign_colors(["s1", "s2"], "viridis")
+    c1 = visualize._assign_colors(["s2", "s1"])
+    c2 = visualize._assign_colors(["s1", "s2"])
     assert set(c1) == {"s1", "s2"}
     assert c1 == c2                 # order-independent + deterministic
     assert c1["s1"] != c1["s2"]     # distinct colors
+
+
+def test_assign_colors_high_contrast_not_pale():
+    # Station colors must contrast with a white background: a sequential heatmap
+    # palette like YlOrRd starts near-white (pale yellow) and was invisible.
+    colors = visualize._assign_colors([f"s{i}" for i in range(6)])
+    for c in colors.values():
+        r, g, b = c[:3]
+        assert not (r > 0.85 and g > 0.85 and b > 0.85)  # no near-white color
+    assert len(set(colors.values())) == len(colors)      # all distinct
+
+
+def test_robust_range_clips_heavy_tail():
+    import numpy as np
+    s = pd.Series(list(np.linspace(0, 20, 1000)) + [1000.0, 1500.0, 2000.0])
+    low, high = visualize._robust_range(s)
+    assert low == 0.0
+    assert 15 < high < 60       # ~p99 within the bulk, far below the 2000 tail
+
+
+def test_robust_range_constant_data():
+    low, high = visualize._robust_range(pd.Series([5.0, 5.0, 5.0]))
+    assert low == high == 5.0   # degenerate; caller falls back to auto bins
+
+
+def test_render_histogram_robust_xrange(tmp_path, monkeypatch):
+    import numpy as np
+    cap = _capture_fig(monkeypatch)
+    df = pd.DataFrame({
+        "timestamp": pd.to_datetime(["2026-06-16T01:00:00"] * 1003, utc=True),
+        "station_id": ["s1"] * 1003,
+        "value": list(np.linspace(0, 20, 1000)) + [1000.0, 1500.0, 2000.0],
+        "aqi": pd.array([pd.NA] * 1003, dtype="Int16"),
+    })
+    visualize.MatplotlibChartRenderer().render_histogram(
+        df, y_column="value", y_label="v", title="t", palette="viridis",
+        output=tmp_path / "h.png")
+    fig = cap["fig"]
+    assert fig.axes[0].get_xlim()[1] < 100   # not stretched to the 2000 tail
+
+
+def test_render_series_station_map_panel_not_too_small(tmp_path, monkeypatch):
+    cap = _capture_fig(monkeypatch)
+    visualize.MatplotlibChartRenderer().render_series(
+        _obs_df(), y_column="value", y_label="v", title="t", palette="viridis",
+        output=tmp_path / "m.png", color_by_station=True, station_points=_points())
+    fig = cap["fig"]
+    fig_h = fig.get_size_inches()[1]
+    map_h = fig.axes[0].get_position().height * fig_h     # top panel = map
+    chart_h = fig.axes[1].get_position().height * fig_h   # bottom panel = chart
+    assert map_h >= chart_h    # map panel at least as tall as the chart
+    assert map_h > 4.0         # and a usable physical size
 
 
 def test_station_coordinates_subset(tmp_path):

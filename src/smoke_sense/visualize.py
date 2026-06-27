@@ -107,14 +107,31 @@ def station_coordinates(data_dir, fips: str, station_ids) -> pd.DataFrame:
     return stations[stations["station_id"].isin(wanted)].reset_index(drop=True)
 
 
-def _assign_colors(station_ids, palette: str) -> dict:
-    """Deterministic per-station color map from `palette` over sorted IDs."""
+def _assign_colors(station_ids) -> dict:
+    """Deterministic, high-contrast per-station color map over sorted IDs.
+
+    Uses a qualitative colormap (tab10/tab20) rather than the sequential map
+    palette: the sequential palettes (e.g. YlOrRd) start near-white and are
+    invisible against a white background.
+    """
     import matplotlib
 
     stations = sorted(set(station_ids))
-    cmap = matplotlib.colormaps[palette]
-    n = len(stations)
-    return {sid: cmap(i / max(n - 1, 1)) for i, sid in enumerate(stations)}
+    size = 10 if len(stations) <= 10 else 20
+    cmap = matplotlib.colormaps["tab10" if size == 10 else "tab20"]
+    return {sid: cmap(i % size) for i, sid in enumerate(stations)}
+
+
+def _robust_range(data, upper_q: float = 0.99) -> tuple[float, float]:
+    """A robust (low, high) display range: data min to its `upper_q` quantile.
+
+    Heavy-tailed data (a handful of huge readings) otherwise collapses a
+    histogram into a single bar. Returns (0.0, 0.0) for empty input; callers
+    fall back to automatic bins when high <= low.
+    """
+    if data.empty:
+        return (0.0, 0.0)
+    return (float(data.min()), float(data.quantile(upper_q)))
 
 
 _RENDERERS: dict[str, type["MapRenderer"]] = {}
@@ -236,7 +253,7 @@ class MatplotlibChartRenderer(ChartRenderer):
 
         if station_points is not None and not station_points.empty:
             fig, (ax_map, ax_chart) = plt.subplots(
-                2, 1, figsize=(10, 9), gridspec_kw={"height_ratios": [1, 1.6]})
+                2, 1, figsize=(11, 12), gridspec_kw={"height_ratios": [1.1, 1.0]})
             MatplotlibChartRenderer._draw_station_map(ax_map, station_points, colors)
         else:
             fig, ax_chart = plt.subplots(figsize=(10, 5))
@@ -280,7 +297,7 @@ class MatplotlibChartRenderer(ChartRenderer):
 
     def render_series(self, obs, *, y_column, y_label, title, palette, output,
                       color_by_station=False, station_points=None) -> Path:
-        colors = (_assign_colors(obs["station_id"].unique(), palette)
+        colors = (_assign_colors(obs["station_id"].unique())
                   if color_by_station else None)
         plt, fig, ax = self._open(title, y_label, station_points, colors)
         ax.set_xlabel("time")
@@ -298,7 +315,7 @@ class MatplotlibChartRenderer(ChartRenderer):
 
     def render_scatter(self, obs, *, y_column, y_label, title, palette, output,
                        color_by_station=False, station_points=None) -> Path:
-        colors = (_assign_colors(obs["station_id"].unique(), palette)
+        colors = (_assign_colors(obs["station_id"].unique())
                   if color_by_station else None)
         plt, fig, ax = self._open(title, y_label, station_points, colors)
         ax.set_xlabel("time")
@@ -331,7 +348,18 @@ class MatplotlibChartRenderer(ChartRenderer):
         plt, fig, ax = self._new_axes(title, y_label)
         ax.set_xlabel(y_label)
         ax.set_ylabel("count")
-        ax.hist(obs[y_column].astype("float64").dropna(), bins=bins)
+        data = obs[y_column].astype("float64").dropna()
+        low, high = _robust_range(data)
+        if high > low:
+            # Bin over a robust range so a few extreme readings don't collapse
+            # the whole distribution into one bar. Disclose anything omitted.
+            shown = data[(data >= low) & (data <= high)]
+            ax.hist(shown, bins=bins, range=(low, high))
+            omitted = len(data) - len(shown)
+            if omitted:
+                ax.set_title(f"{title}  ({omitted:,} values > {high:.1f} omitted)")
+        else:
+            ax.hist(data, bins=bins)
         return self._save(plt, fig, output)
 
 
