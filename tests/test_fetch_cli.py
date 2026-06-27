@@ -72,6 +72,33 @@ def test_fetch_writes_day_files(tmp_path, monkeypatch):
     assert back["county_fips"].iloc[0] == "06037"
 
 
+def test_fetch_reports_per_source_and_aqs_lag_note(tmp_path, monkeypatch):
+    from smoke_sense.bin import fetch as fetch_mod
+
+    class EmptyAQS:
+        name = "aqs"
+        supported_cadences = [60]
+
+        def resolve_cadence(self, requested):
+            return 60
+
+        def fetch(self, county_fips, start, end, metrics, cadence):
+            return iter(())
+
+    monkeypatch.setattr(
+        fetch_mod, "_resolve_providers", lambda sources, creds: [EmptyAQS()]
+    )
+    result = runner.invoke(
+        app,
+        ["fetch", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+         "--source", "aqs", "--credentials", str(tmp_path / "absent.json"),
+         "--output", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "aqs: 0 rows" in result.output
+    assert "6-month lag" in result.output
+
+
 def test_cadence_option_accepted(tmp_path, monkeypatch):
     from smoke_sense.bin import fetch as fetch_mod
 

@@ -47,14 +47,19 @@ def _flush(data_dir, fips, buffer: list[pd.DataFrame]) -> None:
 
 
 def fetch_county(data_dir, fips, start, end, metrics, requested_cadence,
-                 providers, today, refetch=False) -> None:
+                 providers, today, refetch=False) -> dict[str, int]:
     """Stream provider chunks into a per-county buffer; write once at the end.
+
+    Returns the number of rows fetched per provider (keyed by ``provider.name``),
+    with an entry for every requested provider so a source that returned nothing
+    still appears as ``0``.
 
     On any interceptable exit (unhandled exception or KeyboardInterrupt) the
     partial buffer is flushed to the store before the exception propagates.
     """
     cov = store.coverage(data_dir, fips)
     buffer: list[pd.DataFrame] = []
+    counts: dict[str, int] = {provider.name: 0 for provider in providers}
     try:
         for provider in providers:
             actual = provider.resolve_cadence(requested_cadence)
@@ -69,7 +74,9 @@ def fetch_county(data_dir, fips, start, end, metrics, requested_cadence,
             for run_start, run_end in _contiguous_ranges(missing):
                 for chunk in provider.fetch(fips, run_start, run_end, metrics, actual):
                     buffer.append(chunk)
+                    counts[provider.name] += len(chunk)
     except BaseException:
         _flush(data_dir, fips, buffer)
         raise
     _flush(data_dir, fips, buffer)
+    return counts

@@ -66,6 +66,28 @@ def test_refetch_fetches_everything(tmp_path):
     assert date(2026, 6, 16) in fetched_days
 
 
+class EmptyProvider:
+    """A provider that fetches nothing (e.g. AQS for recent, lagged dates)."""
+
+    name = "aqs"
+    supported_cadences = [60]
+
+    def resolve_cadence(self, requested):
+        return 60
+
+    def fetch(self, county_fips, start, end, metrics, cadence):
+        return iter(())
+
+
+def test_fetch_county_returns_per_source_counts(tmp_path):
+    p = FakeProvider()        # purpleair: yields one row per day
+    e = EmptyProvider()       # aqs: yields nothing
+    counts = fetcher.fetch_county(
+        tmp_path, "06037", date(2026, 6, 16), date(2026, 6, 17),
+        [Metric.PM2_5], 10, [p, e], today=date(2026, 6, 30))
+    assert counts == {"purpleair": 2, "aqs": 0}
+
+
 def test_writes_once_on_success(tmp_path, monkeypatch):
     calls = {"n": 0}
     real_write = store.write

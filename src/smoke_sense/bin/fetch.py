@@ -91,8 +91,16 @@ def fetch(
 
     for fips in county_fips:
         console.print(f"[cyan]Fetching[/] {fips} ({cadence.value}) …")
-        fetcher.fetch_county(
+        counts = fetcher.fetch_county(
             output, fips, start_date, end_date, metrics, cadence.minutes,
             providers, today=date.today(), refetch=refetch,
         )
         console.print(f"[green]Updated[/] {output}/{fips}")
+        summary = ", ".join(f"{name}: {n:,} rows" for name, n in sorted(counts.items()))
+        if summary:
+            console.print(f"  fetched — {summary}")
+        if counts.get("aqs") == 0:
+            console.print(
+                "  [yellow]note:[/] AQS publishes on a ~6-month lag; recent dates "
+                "return no data ('No data matched your selection')."
+            )
