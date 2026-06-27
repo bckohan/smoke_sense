@@ -1,0 +1,19 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-26-station-coloring-map.md",
+  "tasks": [
+    {
+      "id": 81,
+      "subject": "Task 1: visualize.py color helper + coordinate lookup + renderer changes",
+      "status": "completed",
+      "description": "**Goal:** Add _assign_colors + station_coordinates, rework render_series/render_scatter to gate coloring and optionally render a stacked station map.\n\n**Files:** src/smoke_sense/visualize.py, tests/test_visualize.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/visualize.py\", \"tests/test_visualize.py\"], \"verifyCommand\": \"uv run pytest tests/test_visualize.py -v\", \"acceptanceCriteria\": [\"_assign_colors deterministic distinct\", \"station_coordinates subset/empty\", \"no-station single axis no legend\", \"station map 2 axes + legend\", \"aggregate/histogram unchanged\"]}\n```"
+    },
+    {
+      "id": 82,
+      "subject": "Task 2: CLI wiring in bin/visualize.py",
+      "status": "completed",
+      "blockedBy": [81],
+      "description": "**Goal:** Add --station to scatter, pass color_by_station/station_points from series and scatter.\n\n**Files:** src/smoke_sense/bin/visualize.py, tests/test_visualize_cli.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/visualize.py\", \"tests/test_visualize_cli.py\"], \"verifyCommand\": \"uv run pytest\", \"acceptanceCriteria\": [\"scatter --station filters\", \"series/scatter no-station PNG\", \"series/scatter --station PNG\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-26T00:00:00Z"
+}

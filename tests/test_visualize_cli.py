@@ -254,3 +254,40 @@ def test_render_chart_excludes_garbage(tmp_path):
     obs = viz.metric_observations(tmp_path, "06037", date(2026, 6, 16),
                                   date(2026, 6, 16), Metric.PM2_5, outlier_filter=f)
     assert obs["value"].min() >= 0  # -999 dropped
+
+
+def test_series_no_station_writes_png(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "series", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert list((tmp_path / "06037").glob("*_series.png"))
+
+
+def test_series_with_station_map_writes_png(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "series", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--station", "s1", "--station", "s2",
+        "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert list((tmp_path / "06037").glob("*_series.png"))
+
+
+def test_scatter_no_station_writes_png(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "scatter", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert list((tmp_path / "06037").glob("*_scatter.png"))
+
+
+def test_scatter_with_station_filter_writes_png(tmp_path):
+    _seed_rich(tmp_path)
+    result = runner.invoke(app, [
+        "visualize", "scatter", "06037", "--start", "2026-06-16",
+        "--metric", "PM2.5", "--station", "s1", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert list((tmp_path / "06037").glob("*_scatter.png"))

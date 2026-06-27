@@ -174,8 +174,13 @@ def series(
         enabled=outlier_filter_on, no_range=no_outlier_range,
         zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
         bound=outlier_bound, exclude=exclude_station)
+    station_points = (
+        viz.station_coordinates(output_dir, county_fips, station)
+        if station else None)
     _render_chart("series", "render_series", county_fips, start, end, metric, by,
                   palette, output, renderer, output_dir, stations=station,
+                  extra={"color_by_station": bool(station),
+                         "station_points": station_points},
                   outlier_filter=ofilter)
 
 
@@ -186,6 +191,7 @@ def scatter(
     end: Optional[datetime] = typer.Option(None, formats=["%Y-%m-%d"], help="End date (inclusive); defaults to today"),
     metric: str = typer.Option(..., "--metric", help="Metric to plot"),
     by: str = typer.Option("value", "--by", help="Plot raw value or AQI [value|aqi]"),
+    station: Optional[list[str]] = typer.Option(None, "--station", help="Limit to these station IDs (repeatable)"),
     palette: str = typer.Option("YlOrRd", help="matplotlib colormap name"),
     output: Optional[Path] = typer.Option(None, help="Output PNG path"),
     renderer: str = typer.Option("matplotlib", help="Rendering engine"),
@@ -212,8 +218,14 @@ def scatter(
         enabled=outlier_filter_on, no_range=no_outlier_range,
         zscore=outlier_zscore, iqr_on=outlier_iqr, iqr_k=outlier_iqr_k,
         bound=outlier_bound, exclude=exclude_station)
+    station_points = (
+        viz.station_coordinates(output_dir, county_fips, station)
+        if station else None)
     _render_chart("scatter", "render_scatter", county_fips, start, end, metric, by,
-                  palette, output, renderer, output_dir, outlier_filter=ofilter)
+                  palette, output, renderer, output_dir, stations=station,
+                  extra={"color_by_station": bool(station),
+                         "station_points": station_points},
+                  outlier_filter=ofilter)
 
 
 @app.command("aggregate")
