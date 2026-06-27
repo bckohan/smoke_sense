@@ -87,3 +87,42 @@ def test_outliers_no_flagged_message(tmp_path):
         "--output", str(tmp_path)])
     assert result.exit_code == 0
     assert "no data" in result.output
+
+
+def _row_metric(ts, value, station, metric):
+    return {
+        "timestamp": pd.Timestamp(ts, tz="UTC"), "county_fips": "06037",
+        "station_id": station, "metric": metric.value, "value": value,
+        "aqi": pd.NA, "agg_window": 10, "source": "purpleair",
+    }
+
+
+def test_outliers_metric_filter(tmp_path):
+    rows = [
+        _row_metric("2026-06-16T01:00:00", 5000.0, "s1", Metric.PM2_5),  # range outlier
+        _row_metric("2026-06-16T02:00:00", 25.0, "s1", Metric.TEMP),     # fine
+        _row_metric("2026-06-16T03:00:00", 26.0, "s1", Metric.TEMP),     # fine
+    ]
+    store.write(tmp_path, "06037", pd.DataFrame(rows))
+    # restrict to temperature -> no outliers -> no stations listed
+    r1 = runner.invoke(app, [
+        "outliers", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+        "--output", str(tmp_path), "--json", "--metric", "temperature"])
+    assert r1.exit_code == 0, r1.output
+    assert json.loads(r1.output)["06037"]["stations"] == []
+    # restrict to PM2.5 -> s1 flagged
+    r2 = runner.invoke(app, [
+        "outliers", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+        "--output", str(tmp_path), "--json", "--metric", "PM2.5"])
+    assert r2.exit_code == 0, r2.output
+    s = json.loads(r2.output)["06037"]["stations"]
+    assert [x["station_id"] for x in s] == ["s1"]
+    assert s[0]["readings"] == 1   # only the PM2.5 reading counts now
+
+
+def test_outliers_bad_metric_exits_nonzero(tmp_path):
+    _seed(tmp_path)
+    r = runner.invoke(app, [
+        "outliers", "06037", "--start", "2026-06-16", "--end", "2026-06-16",
+        "--output", str(tmp_path), "--metric", "nope"])
+    assert r.exit_code != 0

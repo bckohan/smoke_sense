@@ -13,6 +13,7 @@ from rich.table import Table
 
 from .. import outliers as outliers_core
 from .. import store
+from ..data import Metric
 from . import _outlier_cli
 
 console = Console()
@@ -39,6 +40,8 @@ def outliers(
     output: Path = typer.Option(Path("./data"), help="Data directory"),
     json: bool = typer.Option(False, "--json", help="Emit JSON instead of tables"),
     limit: int = typer.Option(10, "--limit", help="Max stations to list (0 = all)"),
+    metric: Optional[List[str]] = typer.Option(
+        None, "--metric", help="Limit to these metric(s); default all (repeatable)"),
     outlier_zscore: Optional[float] = typer.Option(
         None, "--outlier-zscore", help="Per-station z-score threshold (<=0 disables)"),
     outlier_iqr: bool = typer.Option(
@@ -61,6 +64,10 @@ def outliers(
     start_date = start.date()
     end_date = end.date() if end else date.today()
     excluded = set(exclude_station or [])
+    try:
+        wanted_metrics = {Metric(m).value for m in metric} if metric else None
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     cfg = _outlier_cli.config_from_flags(
         no_range=no_outlier_range, zscore=outlier_zscore, iqr_on=outlier_iqr,
         iqr_k=outlier_iqr_k, bound=outlier_bound, exclude=None)
@@ -68,6 +75,8 @@ def outliers(
     payload: dict = {}
     for fips in county_fips:
         df = store.read_range(output, fips, start_date, end_date)
+        if wanted_metrics is not None and not df.empty:
+            df = df[df["metric"].isin(wanted_metrics)]
         if excluded and not df.empty:
             df = df[~df["station_id"].astype(str).isin(excluded)]
         ranked = outliers_core.station_outlier_counts(df, cfg)
