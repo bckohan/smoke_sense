@@ -55,7 +55,12 @@ their readings flagged as outliers — a quick way to find misbehaving sensors.
   `--outlier-iqr/--no-outlier-iqr`, `--outlier-iqr-k`, `--no-outlier-range`,
   `--outlier-bound` (repeatable), `--exclude-station` (repeatable). NOT
   `--outlier-filter/--no-outlier-filter` (the command is the filter).
-- Per county: `store.read_range` → `config_from_flags(...)` →
+- `--exclude-station` rows are **dropped from the frame before counting** (so an
+  already-known-bad station is removed from the list, not reported at 100%
+  flagged via the station check). The detection config is therefore built with
+  `exclude=None`; exclusion is a pre-filter here, not a flag.
+- Per county: `store.read_range` → drop excluded stations →
+  `config_from_flags(..., exclude=None)` →
   `station_outlier_counts(df, config)` → `head(limit)` if `limit > 0` → render.
 - Table columns: `#` (1-based), `station_id`, `readings`, `flagged`,
   `% flagged` (e.g. `12.3%`). "no data" yellow message when the county has no
@@ -69,9 +74,10 @@ Register: `app.command()(outliers.outliers)`.
 ## Data flow
 
 ```
-outliers 06037 --start .. --outlier-bound PM2.5:0:50 --limit 10
+outliers 06037 --start .. --outlier-bound PM2.5:0:50 --limit 10 --exclude-station sX
   -> df = store.read_range(output, fips, start, end)
-  -> cfg = _outlier_cli.config_from_flags(no_range, zscore, iqr_on, iqr_k, bound, exclude)
+  -> df = df[~df.station_id.isin({sX})]                   # excluded stations pre-dropped
+  -> cfg = _outlier_cli.config_from_flags(no_range, zscore, iqr_on, iqr_k, bound, exclude=None)
   -> ranked = outliers.station_outlier_counts(df, cfg)   # flagged>0, sorted by fraction desc
   -> head(limit); Rich table or JSON per county
 ```

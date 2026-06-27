@@ -1,0 +1,19 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-27-outliers-command.md",
+  "tasks": [
+    {
+      "id": 86,
+      "subject": "Task 1: Core station_outlier_counts + config_from_flags",
+      "status": "completed",
+      "description": "**Goal:** Per-station outlier aggregation (reusing existing checks) + flags->config helper, no filter_outliers behavior change.\n\n**Files:** src/smoke_sense/outliers.py, src/smoke_sense/bin/_outlier_cli.py, tests/test_outliers.py, tests/test_outlier_cli.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/outliers.py\", \"src/smoke_sense/bin/_outlier_cli.py\", \"tests/test_outliers.py\", \"tests/test_outlier_cli.py\"], \"verifyCommand\": \"uv run pytest tests/test_outliers.py tests/test_outlier_cli.py -v\", \"acceptanceCriteria\": [\"station_outlier_counts fraction/sort/flagged>0/empty\", \"filter_outliers unchanged\", \"config_from_flags maps flags + bad bound raises\"]}\n```"
+    },
+    {
+      "id": 87,
+      "subject": "Task 2: outliers CLI command",
+      "status": "completed",
+      "blockedBy": [86],
+      "description": "**Goal:** Add the smoke-sense outliers command and register it.\n\n**Files:** src/smoke_sense/bin/outliers.py, src/smoke_sense/bin/__init__.py, tests/test_outliers_command.py\n\n```json:metadata\n{\"files\": [\"src/smoke_sense/bin/outliers.py\", \"src/smoke_sense/bin/__init__.py\", \"tests/test_outliers_command.py\"], \"verifyCommand\": \"uv run pytest\", \"acceptanceCriteria\": [\"table + json shape\", \"--limit + --exclude-station pre-drop\", \"bad bound nonzero + multi-fips + no-data message\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-27T00:00:00Z"
+}
