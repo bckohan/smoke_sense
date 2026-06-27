@@ -399,3 +399,34 @@ def test_render_scatter_with_station_map_two_axes_legend(tmp_path, monkeypatch):
     fig = cap["fig"]
     assert len(fig.axes) == 2
     assert fig.axes[1].get_legend() is not None
+
+
+def test_padded_extent_single_point():
+    (xmin, xmax), (ymin, ymax) = visualize._padded_extent([34.0], [-118.0], pad_km=5.0)
+    assert ymin < 34.0 < ymax and xmin < -118.0 < xmax
+    # ~5 km of latitude padding on each side (111.32 km per degree)
+    assert abs((ymax - ymin) / 2 - 5 / 111.32) < 1e-3
+    # at 34°N a degree of longitude is shorter, so its padding is wider in degrees
+    assert (xmax - xmin) > (ymax - ymin)
+
+
+def test_padded_extent_multiple_points():
+    (xmin, xmax), (ymin, ymax) = visualize._padded_extent(
+        [34.0, 34.2], [-118.2, -118.0], pad_km=5.0)
+    assert ymin < 34.0 and ymax > 34.2
+    assert xmin < -118.2 and xmax > -118.0
+
+
+def test_station_map_zoomed_to_points_with_padding(tmp_path, monkeypatch):
+    cap = _capture_fig(monkeypatch)
+    visualize.MatplotlibChartRenderer().render_series(
+        _obs_df(), y_column="value", y_label="v", title="t",
+        palette="viridis", output=tmp_path / "m.png",
+        color_by_station=True, station_points=_points())
+    ax_map = cap["fig"].axes[0]
+    # the map extent is the explicit padded box around the points, not auto-scale
+    exp_x, exp_y = visualize._padded_extent([34.0, 33.9], [-118.2, -118.1], pad_km=5.0)
+    assert ax_map.get_xlim() == pytest.approx(exp_x)
+    assert ax_map.get_ylim() == pytest.approx(exp_y)
+    # and it is zoomed in (well under a degree), not the whole region
+    assert (exp_x[1] - exp_x[0]) < 0.5 and (exp_y[1] - exp_y[0]) < 0.5

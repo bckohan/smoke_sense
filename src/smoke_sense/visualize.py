@@ -122,6 +122,25 @@ def _assign_colors(station_ids) -> dict:
     return {sid: cmap(i % size) for i, sid in enumerate(stations)}
 
 
+_KM_PER_DEG_LAT = 111.32
+
+
+def _padded_extent(latitudes, longitudes, pad_km: float = 5.0):
+    """lon/lat bounding box around the points, padded by `pad_km` on every side.
+
+    Returns ``((xmin, xmax), (ymin, ymax))``. Longitude padding is scaled by the
+    cosine of the mean latitude, since a degree of longitude shrinks toward the
+    poles.
+    """
+    import math
+
+    lat0 = sum(latitudes) / len(latitudes)
+    dlat = pad_km / _KM_PER_DEG_LAT
+    dlon = pad_km / (_KM_PER_DEG_LAT * max(math.cos(math.radians(lat0)), 0.01))
+    return ((min(longitudes) - dlon, max(longitudes) + dlon),
+            (min(latitudes) - dlat, max(latitudes) + dlat))
+
+
 def _robust_range(data, upper_q: float = 0.99) -> tuple[float, float]:
     """A robust (low, high) display range: data min to its `upper_q` quantile.
 
@@ -278,6 +297,17 @@ class MatplotlibChartRenderer(ChartRenderer):
         ax.set_title("stations")
         ax.set_xlabel("longitude")
         ax.set_ylabel("latitude")
+        # Zoom to the points with 5 km of padding, with a geographic aspect so
+        # the basemap isn't stretched. Set the extent BEFORE add_basemap so the
+        # fetched tiles match it exactly.
+        import math
+        lats = station_points["latitude"].astype(float).tolist()
+        lons = station_points["longitude"].astype(float).tolist()
+        (xmin, xmax), (ymin, ymax) = _padded_extent(lats, lons, pad_km=5.0)
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        lat0 = sum(lats) / len(lats)
+        ax.set_aspect(1.0 / max(math.cos(math.radians(lat0)), 0.01))
         try:
             import contextily as cx
             cx.add_basemap(ax, crs="EPSG:4326",
