@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 _MEAN_COLUMNS = ["station_id", "latitude", "longitude", "mean"]
 _OBS_COLUMNS = ["timestamp", "station_id", "value", "aqi"]
+_STATION_COLUMNS = ["station_id", "latitude", "longitude"]
+_SINGLE_COLOR = "tab:blue"
 
 
 def resolve_by(metric: Metric, by: str) -> str:
@@ -89,6 +91,32 @@ def station_means(data_dir, fips: str, start: date, end: date,
     return merged[_MEAN_COLUMNS]
 
 
+def station_coordinates(data_dir, fips: str, station_ids) -> pd.DataFrame:
+    """Coordinates for the requested stations from the station table.
+
+    Returns columns station_id, latitude, longitude (empty if there is no
+    station table or none of `station_ids` have coordinates).
+    """
+    path = store.stations_path(data_dir, fips)
+    if not path.exists():
+        return pd.DataFrame(columns=_STATION_COLUMNS)
+    stations = (
+        pd.read_parquet(path)[_STATION_COLUMNS].drop_duplicates("station_id")
+    )
+    wanted = set(station_ids)
+    return stations[stations["station_id"].isin(wanted)].reset_index(drop=True)
+
+
+def _assign_colors(station_ids, palette: str) -> dict:
+    """Deterministic per-station color map from `palette` over sorted IDs."""
+    import matplotlib
+
+    stations = sorted(set(station_ids))
+    cmap = matplotlib.colormaps[palette]
+    n = len(stations)
+    return {sid: cmap(i / max(n - 1, 1)) for i, sid in enumerate(stations)}
+
+
 _RENDERERS: dict[str, type["MapRenderer"]] = {}
 
 
@@ -157,13 +185,17 @@ class ChartRenderer(ABC):
 
     @abstractmethod
     def render_series(self, obs: pd.DataFrame, *, y_column: str, y_label: str,
-                      title: str, palette: str, output) -> Path:
+                      title: str, palette: str, output,
+                      color_by_station: bool = False,
+                      station_points: pd.DataFrame | None = None) -> Path:
         """One line per station over time; return the written path."""
         raise NotImplementedError
 
     @abstractmethod
     def render_scatter(self, obs: pd.DataFrame, *, y_column: str, y_label: str,
-                       title: str, palette: str, output) -> Path:
+                       title: str, palette: str, output,
+                       color_by_station: bool = False,
+                       station_points: pd.DataFrame | None = None) -> Path:
         """All observations as points colored by station."""
         raise NotImplementedError
 
@@ -197,15 +229,44 @@ class MatplotlibChartRenderer(ChartRenderer):
     name = "matplotlib"
 
     @staticmethod
-    def _new_axes(title: str, y_label: str):
+    def _open(title: str, y_label: str, station_points, colors):
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.set_title(title)
-        ax.set_ylabel(y_label)
-        return plt, fig, ax
+        if station_points is not None and not station_points.empty:
+            fig, (ax_map, ax_chart) = plt.subplots(
+                2, 1, figsize=(10, 9), gridspec_kw={"height_ratios": [1, 1.6]})
+            MatplotlibChartRenderer._draw_station_map(ax_map, station_points, colors)
+        else:
+            fig, ax_chart = plt.subplots(figsize=(10, 5))
+        ax_chart.set_title(title)
+        ax_chart.set_ylabel(y_label)
+        return plt, fig, ax_chart
+
+    @staticmethod
+    def _new_axes(title: str, y_label: str):
+        return MatplotlibChartRenderer._open(title, y_label, None, None)
+
+    @staticmethod
+    def _draw_station_map(ax, station_points, colors) -> None:
+        for _, r in station_points.iterrows():
+            sid = r["station_id"]
+            color = colors[sid] if colors and sid in colors else _SINGLE_COLOR
+            ax.scatter(r["longitude"], r["latitude"], color=color, s=60,
+                       edgecolor="black", linewidth=0.3)
+            ax.annotate(str(sid), (r["longitude"], r["latitude"]),
+                        fontsize="x-small", xytext=(3, 3),
+                        textcoords="offset points")
+        ax.set_title("stations")
+        ax.set_xlabel("longitude")
+        ax.set_ylabel("latitude")
+        try:
+            import contextily as cx
+            cx.add_basemap(ax, crs="EPSG:4326",
+                           source=cx.providers.OpenStreetMap.Mapnik)
+        except Exception as exc:  # offline / tile error -> render without tiles
+            logger.warning("basemap unavailable (%s); rendering without tiles", exc)
 
     @staticmethod
     def _save(plt, fig, output) -> Path:
@@ -217,27 +278,39 @@ class MatplotlibChartRenderer(ChartRenderer):
             plt.close(fig)
         return output
 
-    def render_series(self, obs, *, y_column, y_label, title, palette, output) -> Path:
-        import matplotlib
-        plt, fig, ax = self._new_axes(title, y_label)
+    def render_series(self, obs, *, y_column, y_label, title, palette, output,
+                      color_by_station=False, station_points=None) -> Path:
+        colors = (_assign_colors(obs["station_id"].unique(), palette)
+                  if color_by_station else None)
+        plt, fig, ax = self._open(title, y_label, station_points, colors)
         ax.set_xlabel("time")
-        stations = sorted(obs["station_id"].unique())
-        cmap = matplotlib.colormaps[palette]
-        for i, sid in enumerate(stations):
+        for sid in sorted(obs["station_id"].unique()):
             sub = obs[obs["station_id"] == sid].sort_values("timestamp")
-            color = cmap(i / max(len(stations) - 1, 1))
-            ax.plot(sub["timestamp"], sub[y_column].astype("float64"),
-                    label=str(sid), color=color)
-        ax.legend(title="station", fontsize="small")
+            if colors:
+                ax.plot(sub["timestamp"], sub[y_column].astype("float64"),
+                        label=str(sid), color=colors[sid])
+            else:
+                ax.plot(sub["timestamp"], sub[y_column].astype("float64"),
+                        color=_SINGLE_COLOR)
+        if colors:
+            ax.legend(title="station", fontsize="small")
         return self._save(plt, fig, output)
 
-    def render_scatter(self, obs, *, y_column, y_label, title, palette, output) -> Path:
-        plt, fig, ax = self._new_axes(title, y_label)
+    def render_scatter(self, obs, *, y_column, y_label, title, palette, output,
+                       color_by_station=False, station_points=None) -> Path:
+        colors = (_assign_colors(obs["station_id"].unique(), palette)
+                  if color_by_station else None)
+        plt, fig, ax = self._open(title, y_label, station_points, colors)
         ax.set_xlabel("time")
-        codes = pd.Categorical(obs["station_id"]).codes
-        sc = ax.scatter(obs["timestamp"], obs[y_column].astype("float64"),
-                        c=codes, cmap=palette, s=12)
-        fig.colorbar(sc, ax=ax, label="station")
+        if colors:
+            for sid in sorted(obs["station_id"].unique()):
+                sub = obs[obs["station_id"] == sid]
+                ax.scatter(sub["timestamp"], sub[y_column].astype("float64"),
+                           color=colors[sid], s=12, label=str(sid))
+            ax.legend(title="station", fontsize="small")
+        else:
+            ax.scatter(obs["timestamp"], obs[y_column].astype("float64"),
+                       color=_SINGLE_COLOR, s=12)
         return self._save(plt, fig, output)
 
     def render_aggregate(self, obs, *, y_column, y_label, title, palette, output,

@@ -250,3 +250,100 @@ def test_station_means_applies_outlier_filter(tmp_path):
         Metric.PM2_5, outlier_filter=drop_high)
     # s1 now only has the 10.0 reading -> mean 10.0
     assert out[out["station_id"] == "s1"]["mean"].iloc[0] == 10.0
+
+
+from pathlib import Path
+
+
+def test_assign_colors_deterministic():
+    c1 = visualize._assign_colors(["s2", "s1"], "viridis")
+    c2 = visualize._assign_colors(["s1", "s2"], "viridis")
+    assert set(c1) == {"s1", "s2"}
+    assert c1 == c2                 # order-independent + deterministic
+    assert c1["s1"] != c1["s2"]     # distinct colors
+
+
+def test_station_coordinates_subset(tmp_path):
+    _seed(tmp_path)
+    out = visualize.station_coordinates(tmp_path, "06037", ["s1"])
+    assert out["station_id"].tolist() == ["s1"]
+    assert set(out.columns) == {"station_id", "latitude", "longitude"}
+
+
+def test_station_coordinates_empty_when_no_parquet(tmp_path):
+    out = visualize.station_coordinates(tmp_path, "99999", ["s1"])
+    assert out.empty
+    assert list(out.columns) == ["station_id", "latitude", "longitude"]
+
+
+def _obs_df():
+    return pd.DataFrame({
+        "timestamp": pd.to_datetime(
+            ["2026-06-16T01:00:00", "2026-06-16T02:00:00", "2026-06-16T01:00:00"],
+            utc=True),
+        "station_id": ["s1", "s1", "s2"],
+        "value": [10.0, 20.0, 5.0],
+        "aqi": pd.array([pd.NA, pd.NA, pd.NA], dtype="Int16"),
+    })
+
+
+def _capture_fig(monkeypatch):
+    captured = {}
+
+    def fake_save(plt, fig, output):
+        captured["fig"] = fig
+        return Path(output)
+
+    monkeypatch.setattr(visualize.MatplotlibChartRenderer, "_save",
+                        staticmethod(fake_save))
+    return captured
+
+
+def _points():
+    return pd.DataFrame({
+        "station_id": ["s1", "s2"],
+        "latitude": [34.0, 33.9],
+        "longitude": [-118.2, -118.1],
+    })
+
+
+def test_render_series_no_station_single_axis_no_legend(tmp_path, monkeypatch):
+    cap = _capture_fig(monkeypatch)
+    visualize.MatplotlibChartRenderer().render_series(
+        _obs_df(), y_column="value", y_label="v", title="t",
+        palette="viridis", output=tmp_path / "x.png")
+    fig = cap["fig"]
+    assert len(fig.axes) == 1
+    assert fig.axes[0].get_legend() is None
+
+
+def test_render_series_with_station_map_two_axes_legend(tmp_path, monkeypatch):
+    cap = _capture_fig(monkeypatch)
+    visualize.MatplotlibChartRenderer().render_series(
+        _obs_df(), y_column="value", y_label="v", title="t",
+        palette="viridis", output=tmp_path / "x.png",
+        color_by_station=True, station_points=_points())
+    fig = cap["fig"]
+    assert len(fig.axes) == 2
+    assert fig.axes[1].get_legend() is not None     # chart axis (below the map)
+
+
+def test_render_scatter_no_station_single_axis_no_legend(tmp_path, monkeypatch):
+    cap = _capture_fig(monkeypatch)
+    visualize.MatplotlibChartRenderer().render_scatter(
+        _obs_df(), y_column="value", y_label="v", title="t",
+        palette="viridis", output=tmp_path / "x.png")
+    fig = cap["fig"]
+    assert len(fig.axes) == 1
+    assert fig.axes[0].get_legend() is None
+
+
+def test_render_scatter_with_station_map_two_axes_legend(tmp_path, monkeypatch):
+    cap = _capture_fig(monkeypatch)
+    visualize.MatplotlibChartRenderer().render_scatter(
+        _obs_df(), y_column="value", y_label="v", title="t",
+        palette="viridis", output=tmp_path / "x.png",
+        color_by_station=True, station_points=_points())
+    fig = cap["fig"]
+    assert len(fig.axes) == 2
+    assert fig.axes[1].get_legend() is not None
