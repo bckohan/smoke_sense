@@ -69,6 +69,21 @@ def build_config(*, no_range: bool, zscore: Optional[float], iqr: Optional[float
     )
 
 
+def config_from_flags(*, no_range: bool, zscore: Optional[float], iqr_on: bool,
+                      iqr_k: float, bound: Optional[list[str]],
+                      exclude: Optional[list[str]] = None) -> OutlierConfig:
+    """Build an OutlierConfig from raw CLI flag values (parses --outlier-bound)."""
+    parsed: list[tuple[Metric, tuple[float, float]]] = []
+    for spec in (bound or []):
+        try:
+            parsed.append(parse_bound(spec))
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    return build_config(no_range=no_range, zscore=zscore,
+                        iqr=(iqr_k if iqr_on else None), bounds=parsed,
+                        exclude_stations=exclude)
+
+
 def filter_frame(df: pd.DataFrame, *, enabled: bool, no_range: bool,
                  zscore: Optional[float], iqr_on: bool, iqr_k: float,
                  bound: Optional[list[str]],
@@ -77,15 +92,8 @@ def filter_frame(df: pd.DataFrame, *, enabled: bool, no_range: bool,
     """Apply the outlier filter to `df` per the CLI flags; log removals."""
     if not enabled:
         return df, OutlierReport()
-    parsed: list[tuple[Metric, tuple[float, float]]] = []
-    for spec in (bound or []):
-        try:
-            parsed.append(parse_bound(spec))
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc)) from exc
-    cfg = build_config(no_range=no_range, zscore=zscore,
-                       iqr=(iqr_k if iqr_on else None), bounds=parsed,
-                       exclude_stations=exclude)
+    cfg = config_from_flags(no_range=no_range, zscore=zscore, iqr_on=iqr_on,
+                            iqr_k=iqr_k, bound=bound, exclude=exclude)
     clean, report = filter_outliers(df, cfg)
     if report.total:
         logger.info("filtered %d outlier rows %s", report.total, report.per_metric)

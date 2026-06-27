@@ -94,6 +94,21 @@ def test_filter_frame_excludes_stations():
     assert report.total == 1
 
 
+def test_config_from_flags_maps_overrides():
+    cfg = oc.config_from_flags(no_range=False, zscore=2.0, iqr_on=True, iqr_k=4.0,
+                               bound=["PM2.5:0:500"], exclude=["s9"])
+    assert cfg.zscore == 2.0
+    assert cfg.iqr == 4.0
+    assert cfg.bounds[Metric.PM2_5] == (0.0, 500.0)
+    assert cfg.exclude_stations == frozenset({"s9"})
+
+
+def test_config_from_flags_bad_bound():
+    with pytest.raises(typer.BadParameter):
+        oc.config_from_flags(no_range=False, zscore=None, iqr_on=False, iqr_k=3.0,
+                             bound=["PM2.5:bad"], exclude=None)
+
+
 def test_make_filter_returns_callable():
     df = _df([("s1", Metric.PM2_5, 10.0), ("s1", Metric.PM2_5, -5.0)])
     f = oc.make_filter(enabled=True, no_range=False, zscore=None,

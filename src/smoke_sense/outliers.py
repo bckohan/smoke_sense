@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_IQR_K: float = 3.0
 
+_STATION_OUTLIER_COLUMNS = ["station_id", "readings", "flagged", "fraction"]
+
 # (low, high) physical bounds per metric, in each metric's canonical unit.
 DEFAULT_BOUNDS: dict[Metric, tuple[float, float]] = {
     Metric.PM2_5: (0, 1000),
@@ -135,13 +137,13 @@ def iqr_mask(df: pd.DataFrame, k: float | None, min_group: int) -> pd.Series:
     return mask.fillna(False)
 
 
-def filter_outliers(df: pd.DataFrame,
-                    config: OutlierConfig = DEFAULT_CONFIG
-                    ) -> tuple[pd.DataFrame, OutlierReport]:
-    """Drop outlier rows per `config`; return (clean_df, report)."""
-    if df.empty:
-        return df.copy(), OutlierReport()
+def _evaluate_checks(df: pd.DataFrame,
+                     config: OutlierConfig) -> tuple[pd.Series, dict[str, int]]:
+    """Combined outlier mask over the enabled checks, plus per-check counts.
 
+    Each dropped row is attributed to the FIRST matching check (order:
+    station, range, zscore, iqr).
+    """
     checks: list[tuple[str, pd.Series]] = []
     if config.exclude_stations:
         checks.append(("station", station_mask(df, config.exclude_stations)))
@@ -160,7 +162,17 @@ def filter_outliers(df: pd.DataFrame,
         per_check[name] = int((mask & ~already).sum())
         already = already | mask
         combined = combined | mask
+    return combined, per_check
 
+
+def filter_outliers(df: pd.DataFrame,
+                    config: OutlierConfig = DEFAULT_CONFIG
+                    ) -> tuple[pd.DataFrame, OutlierReport]:
+    """Drop outlier rows per `config`; return (clean_df, report)."""
+    if df.empty:
+        return df.copy(), OutlierReport()
+
+    combined, per_check = _evaluate_checks(df, config)
     dropped = df[combined]
     per_metric = {
         str(metric): int(n)
@@ -169,3 +181,28 @@ def filter_outliers(df: pd.DataFrame,
     report = OutlierReport(total=int(combined.sum()),
                            per_metric=per_metric, per_check=per_check)
     return df[~combined].reset_index(drop=True), report
+
+
+def station_outlier_counts(df: pd.DataFrame,
+                           config: OutlierConfig = DEFAULT_CONFIG) -> pd.DataFrame:
+    """Per-station outlier tally using the same checks as `filter_outliers`.
+
+    Returns columns station_id, readings, flagged, fraction for stations with at
+    least one flagged reading, sorted by fraction (desc) then station_id (asc).
+    """
+    if df.empty:
+        return pd.DataFrame(columns=_STATION_OUTLIER_COLUMNS)
+    combined, _ = _evaluate_checks(df, config)
+    tab = pd.DataFrame({
+        "station_id": df["station_id"].astype(str).to_numpy(),
+        "_flagged": combined.astype(int).to_numpy(),
+    })
+    grp = tab.groupby("station_id", observed=True)["_flagged"]
+    out = pd.DataFrame({"readings": grp.size(), "flagged": grp.sum()}).reset_index()
+    out = out[out["flagged"] > 0]
+    if out.empty:
+        return pd.DataFrame(columns=_STATION_OUTLIER_COLUMNS)
+    out["fraction"] = out["flagged"] / out["readings"]
+    out = out.sort_values(["fraction", "station_id"],
+                          ascending=[False, True]).reset_index(drop=True)
+    return out[_STATION_OUTLIER_COLUMNS]

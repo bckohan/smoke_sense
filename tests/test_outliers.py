@@ -146,3 +146,30 @@ def test_filter_outliers_station_counts_once_for_range_outlier():
     assert report.total == 1
     assert report.per_check["station"] == 1
     assert report.per_check.get("range", 0) == 0
+
+
+def test_station_outlier_counts_ranks_by_fraction():
+    df = _df([
+        ("s1", Metric.PM2_5, 10.0),
+        ("s1", Metric.PM2_5, 5000.0),   # range outlier (> 1000)
+        ("s2", Metric.PM2_5, 10.0),
+        ("s2", Metric.PM2_5, 11.0),
+        ("s2", Metric.PM2_5, 5000.0),   # range outlier
+    ])
+    out = outliers.station_outlier_counts(df)
+    assert out["station_id"].tolist() == ["s1", "s2"]   # 0.5 > 0.333
+    assert out["readings"].tolist() == [2, 3]
+    assert out["flagged"].tolist() == [1, 1]
+    assert out["fraction"].iloc[0] == 0.5
+
+
+def test_station_outlier_counts_only_flagged_stations():
+    df = _df([("s1", Metric.PM2_5, 10.0), ("s2", Metric.PM2_5, 5000.0)])
+    out = outliers.station_outlier_counts(df)
+    assert out["station_id"].tolist() == ["s2"]
+
+
+def test_station_outlier_counts_empty():
+    out = outliers.station_outlier_counts(_df([]).iloc[0:0])
+    assert out.empty
+    assert list(out.columns) == ["station_id", "readings", "flagged", "fraction"]
