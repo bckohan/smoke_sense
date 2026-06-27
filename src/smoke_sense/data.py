@@ -47,6 +47,8 @@ class Metric(StrEnumProperties):
     PRESSURE   = "pressure",    "pressure",    "hPa", False
     WIND_SPEED = "wind_speed",  "wind_speed",  "m/s", False
     WIND_DIR   = "wind_dir",    "wind_dir",    "deg", False
+    WIND_SPEED_80M = "wind_speed_80m", "wind_speed_80m", "m/s", False
+    WIND_DIR_80M   = "wind_dir_80m",   "wind_dir_80m",   "deg", False
     VOC        = "VOC",        "VOC",        "iaq",  False
 
 
